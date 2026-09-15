@@ -8,7 +8,34 @@ static UIColor* ThemeColor(int r, int g, int b) {
     return [UIColor colorWithRed:r/255.0 green:g/255.0 blue:b/255.0 alpha:1.0];
 }
 
+@interface CheatMenuRootView : UIView
+@property (nonatomic, weak) CheatMenuController* host;
+@end
+
+@interface CheatMenuController ()
+@property (nonatomic, assign) BOOL layoutDone;
+@end
+
+@implementation CheatMenuRootView
+
+- (BOOL)pointInside:(CGPoint)point withEvent:(UIEvent*)event {
+    CheatMenuController* c = self.host;
+    if (!c) return NO;
+    if (c.toggleBtn && CGRectContainsPoint(c.toggleBtn.frame, point)) return YES;
+    if (c.menuPanel && !c.menuPanel.hidden && CGRectContainsPoint(c.menuPanel.frame, point)) return YES;
+    return NO;
+}
+
+@end
+
 @implementation CheatMenuController
+
+- (void)loadView {
+    CheatMenuRootView* root = [[CheatMenuRootView alloc] initWithFrame:[UIScreen mainScreen].bounds];
+    root.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
+    root.host = self;
+    self.view = root;
+}
 
 - (void)viewDidLoad {
     [super viewDidLoad];
@@ -28,6 +55,10 @@ static UIColor* ThemeColor(int r, int g, int b) {
     self.toggleBtn.titleLabel.font = [UIFont boldSystemFontOfSize:22];
     self.toggleBtn.accessibilityIdentifier = @"cheat_toggle";
     [self.toggleBtn addTarget:self action:@selector(toggleMenu) forControlEvents:UIControlEventTouchUpInside];
+
+    UIPanGestureRecognizer* pan = [[UIPanGestureRecognizer alloc] initWithTarget:self action:@selector(panMenu:)];
+    [self.toggleBtn addGestureRecognizer:pan];
+
     [self.view addSubview:self.toggleBtn];
 
     self.menuPanel = [[UIView alloc] initWithFrame:CGRectMake(10, 50, 250, 0)];
@@ -41,6 +72,28 @@ static UIColor* ThemeColor(int r, int g, int b) {
 
     self.expanded = NO;
     [self rebuildMenu];
+}
+
+- (void)panMenu:(UIPanGestureRecognizer*)pan {
+    CGRect b = self.view.bounds;
+    CGPoint t = [pan translationInView:self.view];
+
+    CGRect tf = self.toggleBtn.frame;
+    CGRect pf = self.menuPanel.frame;
+
+    tf.origin.x += t.x;
+    tf.origin.y += t.y;
+    tf.origin.x = MAX(10, MIN(tf.origin.x, b.size.width - tf.size.width - 10));
+    tf.origin.y = MAX(30, MIN(tf.origin.y, b.size.height - tf.size.height - 30));
+
+    pf.origin.x += t.x;
+    pf.origin.y += t.y;
+    pf.origin.x = MAX(8, MIN(pf.origin.x, b.size.width - pf.size.width - 8));
+    pf.origin.y = MAX(20, MIN(pf.origin.y, b.size.height - pf.size.height - 20));
+
+    self.toggleBtn.frame = tf;
+    self.menuPanel.frame = pf;
+    [pan setTranslation:CGPointZero inView:self.view];
 }
 
 - (void)toggleMenu {
@@ -192,8 +245,12 @@ static UIColor* ThemeColor(int r, int g, int b) {
 
 - (void)viewDidLayoutSubviews {
     [super viewDidLayoutSubviews];
+    if (self.layoutDone) return;
     CGFloat w = self.view.bounds.size.width;
-    self.toggleBtn.frame = CGRectMake(w - 62, 120, 48, 48);
+    CGFloat h = self.view.bounds.size.height;
+    self.toggleBtn.frame = CGRectMake(w - 62, h * 0.18f, 48, 48);
+    self.menuPanel.frame = CGRectMake(10, 50, 250, self.menuPanel.bounds.size.height);
+    self.layoutDone = YES;
 }
 @end
 
