@@ -90,8 +90,7 @@ static const CGFloat kPanelW = 400;
 - (void)dragMenu:(UIPanGestureRecognizer*)gr {
     CGPoint t = [gr translationInView:self.view];
     CGRect f = g_menuWindow.frame;
-    self.anchor.x += t.x;
-    self.anchor.y += t.y;
+    self.anchor = CGPointMake(self.anchor.x + t.x, self.anchor.y + t.y);
     [self clampAnchorToScreen];
     f.origin = self.anchor;
     g_menuWindow.frame = f;
@@ -101,8 +100,9 @@ static const CGFloat kPanelW = 400;
 - (void)clampAnchorToScreen {
     CGRect screen = [UIScreen mainScreen].bounds;
     CGRect f = g_menuWindow.frame;
-    self.anchor.x = MAX(6, MIN(self.anchor.x, screen.size.width - f.size.width - 6));
-    self.anchor.y = MAX(24, MIN(self.anchor.y, screen.size.height - f.size.height - 6));
+    CGFloat x = MAX(6, MIN(self.anchor.x, screen.size.width - f.size.width - 6));
+    CGFloat y = MAX(24, MIN(self.anchor.y, screen.size.height - f.size.height - 6));
+    self.anchor = CGPointMake(x, y);
 }
 
 - (void)toggleMenu {
