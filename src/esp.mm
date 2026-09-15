@@ -235,6 +235,12 @@ void ESP::CollectPlayers() {
         Vector3 diff = pd.position - localPos;
         pd.distance = sqrtf(diff.x*diff.x + diff.y*diff.y + diff.z*diff.z);
 
+        if (g_mainCamera) {
+            Vector3 ws = WorldToScreenPoint(g_mainCamera, pd.position);
+            pd.screen = ws;
+            pd.onScreen = ws.z > 0.05f;
+        }
+
         pd.espColor = pd.team == 2 ? Color::Blue() : Color::Red();
         pd.isLocal = pd.team == 0 && pd.distance < 0.3f;
 
@@ -283,14 +289,13 @@ void ESP::Render(CGContextRef ctx, CGFloat width, CGFloat height) {
 
     for (auto& player : snapshot) {
         if (player.isLocal || !player.alive) continue;
+        if (!player.onScreen) continue;
 
         Vector2 screen;
-        float dist = 0;
-        Vector3 ws = WorldToScreenPoint(g_mainCamera, player.position);
-        dist = ws.z;
-        if (ws.z <= 0) continue;
-        screen.x = ws.x;
-        screen.y = m_screenHeight - ws.y;
+        float dist = player.screen.z;
+        if (dist <= 0) continue;
+        screen.x = player.screen.x;
+        screen.y = m_screenHeight - player.screen.y;
         if (screen.x <= 0 || screen.y <= 0 || screen.x >= width || screen.y >= height) continue;
 
         Color col = g_config.espTeamColor ? player.espColor : Color::Yellow();

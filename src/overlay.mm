@@ -1,7 +1,6 @@
 #import "overlay.h"
 #import <QuartzCore/QuartzCore.h>
-
-extern void CheatUpdateMainThread(void);
+#import "tracelog.h"
 
 static UIWindow* g_overlayWindow = nil;
 static ESPOverlayView* g_overlayView = nil;
@@ -40,7 +39,10 @@ static ESP* g_espPtr = nullptr;
 }
 
 - (void)displayLinkTick:(CADisplayLink*)link {
-    CheatUpdateMainThread();
+    static long tick = 0;
+    if ((tick++ % 300) == 0) {
+        CHEAT_LOG("m: display alive tick=%ld esp=%d initialized=%d", tick, g_espPtr != nullptr, g_config.initialized);
+    }
     if (g_espPtr && g_config.initialized) [self setNeedsDisplay];
 }
 

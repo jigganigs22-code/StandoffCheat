@@ -4,6 +4,8 @@
 #import <objc/runtime.h>
 #import <dlfcn.h>
 #import <pthread.h>
+#import <unistd.h>
+#import <time.h>
 #import "cheat_data.h"
 #import "menu.h"
 #import "overlay.h"
@@ -22,7 +24,6 @@ CheatConfig g_config;
 
 static bool g_hooked = false;
 static void* g_fwHandle = NULL;
-static bool g_bindingReady = false;
 
 #pragma mark - Process guard
 
@@ -109,47 +110,13 @@ static bool BindIL2CppFunctions(void* handle) {
     return true;
 }
 
-static int g_domainRetries = 0;
-static int g_resolverRetries = 0;
+#pragma mark - Update loop (dedicated IL2CPP worker thread, never main)
 
-static void FinishInitialize() {
-    CHEAT_LOG("m: FinishInitialize on main thread");
-    if (g_hooked) return;
+static long g_workerTick = 0;
 
-    if (!il2cpp_domain_get || !il2cpp_domain_get()) {
-        CHEAT_LOG("m: domain not ready yet");
-        if (g_domainRetries++ >= 120) { CHEAT_LOG("m: gave up waiting for domain"); return; }
-        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(500 * NSEC_PER_MSEC)),
-                       dispatch_get_main_queue(), ^{ FinishInitialize(); });
-        return;
-    }
-
-    g_resolver = new IL2CPPResolver();
-    if (!g_resolver->Initialize()) {
-        CHEAT_LOG("m: resolver Initialize FAILED — will retry");
-        delete g_resolver;
-        g_resolver = nullptr;
-        if (g_resolverRetries++ >= 60) { CHEAT_LOG("m: gave up on resolver"); return; }
-        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(1000 * NSEC_PER_MSEC)),
-                       dispatch_get_main_queue(), ^{ FinishInitialize(); });
-        return;
-    }
-    CHEAT_LOG("m: resolver ok — PlayerController=%p Transform=%p Camera=%p",
-              (void*)g_resolver->classes.PlayerController,
-              (void*)g_resolver->classes.Transform,
-              (void*)g_resolver->classes.Camera);
-
-    g_config.initialized = true;
-    g_hooked = true;
-    CHEAT_LOG("m: HOOKED — cheat active");
-}
-
-#pragma mark - Update loop (main thread, via overlay CADisplayLink)
-
-void CheatUpdateMainThread() {
+static void WorkerTick() {
     if (!g_hooked || !g_config.initialized) return;
     @autoreleasepool {
-        static long tick = 0;
         GetRecoilControl()->Update();
 
         ESP* esp = (ESP*)GetESP();
@@ -161,10 +128,73 @@ void CheatUpdateMainThread() {
             aim->Update();
         }
 
-        if ((tick++ % 600) == 0) {
-            CHEAT_LOG("m: alive tick=%ld players=%zu", tick, g_players.size());
+        if ((g_workerTick++ % 300) == 0) {
+            CHEAT_LOG("w: armed tick=%ld players=%zu", g_workerTick, g_players.size());
         }
     }
+}
+
+static void FinishInitialize() {
+    CHEAT_LOG("w: FinishInitialize on worker thread");
+    if (g_hooked) return;
+
+    if (!il2cpp_domain_get || !il2cpp_domain_get()) { CHEAT_LOG("w: domain not ready"); return; }
+
+    il2cpp_thread_attach(il2cpp_domain_get());
+
+    IL2CPPResolver* r = new IL2CPPResolver();
+    if (!r->Initialize()) {
+        CHEAT_LOG("w: resolver Initialize FAILED");
+        delete r;
+        return;
+    }
+
+    g_resolver = r;
+    g_config.initialized = true;
+    g_hooked = true;
+    CHEAT_LOG("w: HOOKED — PlayerController=%p Transform=%p Camera=%p",
+              (void*)r->classes.PlayerController,
+              (void*)r->classes.Transform,
+              (void*)r->classes.Camera);
+}
+
+static void* cheatWorker(void* arg) {
+    @autoreleasepool {
+        CHEAT_LOG("w: worker start");
+
+        int attempts = 0;
+        while (attempts < 900) {
+            if (!g_fwHandle) g_fwHandle = LoadIL2CppFunctions();
+            if (g_fwHandle && BindIL2CppFunctions(g_fwHandle)) break;
+            attempts++;
+            usleep(100 * 1000);
+        }
+        if (!g_fwHandle || !il2cpp_domain_get) { CHEAT_LOG("w: gave up binding"); return NULL; }
+
+        struct timespec ts;
+        clock_gettime(CLOCK_MONOTONIC, &ts);
+        double bootStart = (double)ts.tv_sec + (double)ts.tv_nsec / 1e9;
+
+        int idle = 0;
+        while (idle < 400) {
+            usleep(200 * 1000);
+            idle++;
+            clock_gettime(CLOCK_MONOTONIC, &ts);
+            double now = (double)ts.tv_sec + (double)ts.tv_nsec / 1e9;
+            if (now - bootStart < 8.0) continue;
+            if (!il2cpp_domain_get || !il2cpp_domain_get()) continue;
+            FinishInitialize();
+            if (g_hooked) break;
+        }
+        if (!g_hooked) { CHEAT_LOG("w: tapout — never hooked"); return NULL; }
+
+        CHEAT_LOG("w: entering main loop");
+        while (true) {
+            usleep(16 * 1000);
+            WorkerTick();
+        }
+    }
+    return NULL;
 }
 
 #pragma mark - UI scheduling (main thread)
@@ -182,30 +212,6 @@ static void ScheduleUI() {
     });
 }
 
-#pragma mark - Init thread (background, quick retry)
-
-static void* initThread(void* arg) {
-    @autoreleasepool {
-        CHEAT_LOG("t: init thread start");
-        int attempts = 0;
-        while (!g_bindingReady && attempts < 900) {
-            if (!g_fwHandle) g_fwHandle = LoadIL2CppFunctions();
-            if (g_fwHandle && BindIL2CppFunctions(g_fwHandle)) {
-                g_bindingReady = true;
-                CHEAT_LOG("t: bind success at attempt %d", attempts);
-                dispatch_async(dispatch_get_main_queue(), ^{
-                    FinishInitialize();
-                });
-                break;
-            }
-            usleep(100 * 1000);
-            attempts++;
-        }
-        if (!g_bindingReady) CHEAT_LOG("t: gave up binding after %d attempts", attempts);
-    }
-    return NULL;
-}
-
 #pragma mark - Entry
 
 __attribute__((constructor))
@@ -217,7 +223,7 @@ static void StandoffCheatInit() {
     CHEAT_LOG("init: starting — Standoff 2 cheat");
 
     pthread_t thread;
-    pthread_create(&thread, NULL, initThread, NULL);
+    pthread_create(&thread, NULL, cheatWorker, NULL);
     ScheduleUI();
 }
 

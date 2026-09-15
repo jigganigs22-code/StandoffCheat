@@ -87,6 +87,8 @@ struct PlayerData {
     float distance;
     int weaponId;
     Color espColor;
+    Vector3 screen;
+    bool onScreen;
 };
 
 extern CheatConfig g_config;

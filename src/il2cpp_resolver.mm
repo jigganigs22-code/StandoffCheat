@@ -1,6 +1,7 @@
 #import "il2cpp_resolver.h"
 #include <dlfcn.h>
 #include <cstdio>
+#include "tracelog.h"
 
 #define DEFINE_FPTR(ret, name, args) ret (*name) args = nullptr
 
@@ -44,7 +45,7 @@ extern "C" {
     DEFINE_FPTR(uintptr_t, il2cpp_array_length, (const Il2CppArray*));
 }
 
-static IL2CPPResolver* g_resolver = nullptr;
+extern IL2CPPResolver* g_resolver;
 
 IL2CPPResolver* GetResolver() {
     return g_resolver;
@@ -127,7 +128,7 @@ bool IL2CPPResolver::Initialize() {
     assemblies = il2cpp_domain_get_assemblies(domain, &assemblyCount);
     if (!assemblies || assemblyCount == 0) return false;
 
-    printf("[StandoffCheat] IL2CPP domain found, %zu assemblies\n", assemblyCount);
+    CHEAT_LOG("r: domain ok, %zu assemblies", assemblyCount);
 
     classes.PlayerController = FindClassRecursive("PlayerController");
     classes.PlayerManager = FindClassRecursive("PlayerManager");
@@ -147,6 +148,7 @@ bool IL2CPPResolver::Initialize() {
     classes.Raycaster = FindClassRecursive("Raycaster");
     classes.SpectatorCameraEffect = FindClassRecursive("SpectatorCameraEffect");
     classes.PhotonPlayerGameExtension = FindClassRecursive("PhotonPlayerGameExtension");
+    CHEAT_LOG("r: standoff classes done (player=%p recoil=%p)", (void*)classes.PlayerController, (void*)classes.RecoilControl);
 
     classes.PhotonView = FindClass("Photon", "PhotonView");
     classes.PhotonPlayer = FindClass("", "PhotonPlayer");
@@ -162,6 +164,7 @@ bool IL2CPPResolver::Initialize() {
     classes.Quaternion = FindClass("UnityEngine", "Quaternion");
     classes.Rect = FindClass("UnityEngine", "Rect");
     classes.Screen = FindClass("UnityEngine", "Screen");
+    CHEAT_LOG("r: engine classes done");
 
     int found = 0;
     if (classes.PlayerController) found++;
