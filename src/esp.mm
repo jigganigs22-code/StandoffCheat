@@ -1,5 +1,6 @@
 #import "esp.h"
 #import "il2cpp_resolver.h"
+#import "w2s.h"
 
 extern IL2CPPResolver* GetResolver();
 static ESP s_esp;
@@ -245,7 +246,7 @@ void ESP::CollectPlayers() {
     g_players.swap(collected);
 }
 
-void ESP::Render(CGBitmapContextRef ctx, CGFloat width, CGFloat height) {
+void ESP::Render(CGContextRef ctx, CGFloat width, CGFloat height) {
     if (!g_config.initialized || !g_config.espEnabled || !ctx) return;
 
     m_screenWidth = width;
@@ -314,7 +315,7 @@ bool ESP::WorldToScreen(Vector3 world, Vector2& screen, float& distance) {
     return true;
 }
 
-void ESP::DrawBox(CGBitmapContextRef ctx, Vector2 center, float w, float h, Color color, float thickness) {
+void ESP::DrawBox(CGContextRef ctx, Vector2 center, float w, float h, Color color, float thickness) {
     CGFloat x1 = center.x - w/2, y1 = center.y - h/2;
     CGFloat x2 = center.x + w/2, y2 = center.y + h/2;
 
@@ -348,7 +349,7 @@ void ESP::DrawBox(CGBitmapContextRef ctx, Vector2 center, float w, float h, Colo
     }
 }
 
-void ESP::DrawHealthBar(CGBitmapContextRef ctx, Vector2 pos, float height, float health, float maxHealth) {
+void ESP::DrawHealthBar(CGContextRef ctx, Vector2 pos, float height, float health, float maxHealth) {
     float pct = maxHealth > 0 ? health / maxHealth : 0;
     if (pct < 0) pct = 0;
     if (pct > 1) pct = 1;
@@ -370,7 +371,7 @@ void ESP::DrawHealthBar(CGBitmapContextRef ctx, Vector2 pos, float height, float
     CGContextStrokeRect(ctx, CGRectMake(pos.x, pos.y, 4, height));
 }
 
-void ESP::DrawText(CGBitmapContextRef ctx, const char* text, float x, float y, Color color, float scale) {
+void ESP::DrawText(CGContextRef ctx, const char* text, float x, float y, Color color, float scale) {
     if (!text || strlen(text) == 0) return;
     NSString* str = [NSString stringWithUTF8String:text];
     NSDictionary* attrs = @{
@@ -384,7 +385,7 @@ void ESP::DrawText(CGBitmapContextRef ctx, const char* text, float x, float y, C
     [str drawAtPoint:point withAttributes:attrs];
 }
 
-void ESP::DrawLine(CGBitmapContextRef ctx, float x1, float y1, float x2, float y2, Color color, float thickness) {
+void ESP::DrawLine(CGContextRef ctx, float x1, float y1, float x2, float y2, Color color, float thickness) {
     CGContextSetRGBStrokeColor(ctx, color.r, color.g, color.b, color.a);
     CGContextSetLineWidth(ctx, thickness);
     CGContextMoveToPoint(ctx, x1, y1);
@@ -392,14 +393,14 @@ void ESP::DrawLine(CGBitmapContextRef ctx, float x1, float y1, float x2, float y
     CGContextStrokePath(ctx);
 }
 
-void ESP::DrawCircle(CGBitmapContextRef ctx, float cx, float cy, float radius, Color color, float thickness) {
+void ESP::DrawCircle(CGContextRef ctx, float cx, float cy, float radius, Color color, float thickness) {
     CGContextSetRGBStrokeColor(ctx, color.r, color.g, color.b, color.a);
     CGContextSetLineWidth(ctx, thickness);
     CGContextAddArc(ctx, cx, cy, radius, 0, 2 * M_PI, 0);
     CGContextStrokePath(ctx);
 }
 
-void ESP::DrawSnapline(CGBitmapContextRef ctx, Vector2 bottom, Color color) {
+void ESP::DrawSnapline(CGContextRef ctx, Vector2 bottom, Color color) {
     CGContextSetRGBStrokeColor(ctx, color.r, color.g, color.b, 0.6f);
     CGContextSetLineWidth(ctx, 1.0f);
     CGContextMoveToPoint(ctx, m_screenWidth/2, m_screenHeight);
