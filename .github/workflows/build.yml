@@ -31,11 +31,13 @@ jobs:
 
       - name: Obtain IPA
         id: ipa
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           INPUT="${{ github.event.inputs.ipa }}"
           case "$INPUT" in
             ""|release)
-              ASSET_URL="$(gh release view --repo "${{ github.repository }}" --json assets --jq '.assets[] | select(.name | test("\\.ipa$")) | .url' | head -1)"
+              ASSET_URL="$(gh release view --repo "${{ github.repository }}" --json assets --jq '.assets[] | select(.name | contains(".ipa")) | .url' | head -1)"
               [ -n "$ASSET_URL" ] || { echo "::error::No .ipa asset found in latest release. Upload the IPA as a release asset."; exit 1; }
               echo "Downloading release asset: $ASSET_URL"
               gh release download --repo "${{ github.repository }}" --pattern '*.ipa' --clobber
