@@ -8,69 +8,66 @@ static UIColor* ThemeColor(int r, int g, int b) {
     return [UIColor colorWithRed:r/255.0 green:g/255.0 blue:b/255.0 alpha:1.0];
 }
 
-@interface CheatMenuRootView : UIView
-@property (nonatomic, assign) CheatMenuController* host;
-@end
+static const CGFloat kBarW = 170;
+static const CGFloat kBarH = 40;
+static const CGFloat kPanelW = 400;
 
 @interface CheatMenuController () <UIGestureRecognizerDelegate>
-@property (nonatomic, assign) BOOL layoutDone;
-@end
-
-@implementation CheatMenuRootView
-
-- (BOOL)pointInside:(CGPoint)point withEvent:(UIEvent*)event {
-    CheatMenuController* c = self.host;
-    if (!c) return NO;
-    if (c.toggleBtn && CGRectContainsPoint(c.toggleBtn.frame, point)) return YES;
-    if (c.menuPanel && !c.menuPanel.hidden && CGRectContainsPoint(c.menuPanel.frame, point)) return YES;
-    return NO;
-}
-
+@property (nonatomic, assign) CGPoint anchor;
+@property (nonatomic, assign) CGFloat panelHeight;
 @end
 
 @implementation CheatMenuController
-
-- (void)loadView {
-    CheatMenuRootView* root = [[CheatMenuRootView alloc] initWithFrame:[UIScreen mainScreen].bounds];
-    root.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
-    root.host = self;
-    self.view = root;
-}
 
 - (void)viewDidLoad {
     [super viewDidLoad];
     self.view.backgroundColor = [UIColor clearColor];
     self.view.userInteractionEnabled = YES;
 
-    CGFloat btnSize = 48;
-    self.toggleBtn = [UIButton buttonWithType:UIButtonTypeCustom];
-    self.toggleBtn.frame = CGRectMake(self.view.bounds.size.width - btnSize - 14, 120, btnSize, btnSize);
-    self.toggleBtn.backgroundColor = ThemeColor(30, 160, 90);
-    self.toggleBtn.layer.cornerRadius = btnSize / 2;
-    self.toggleBtn.layer.shadowColor = [UIColor blackColor].CGColor;
-    self.toggleBtn.layer.shadowOpacity = 0.7;
-    self.toggleBtn.layer.shadowRadius = 4;
-    self.toggleBtn.layer.shadowOffset = CGSizeMake(0, 2);
-    [self.toggleBtn setTitle:@"⚙" forState:UIControlStateNormal];
-    self.toggleBtn.titleLabel.font = [UIFont boldSystemFontOfSize:22];
-    self.toggleBtn.accessibilityIdentifier = @"cheat_toggle";
-    [self.toggleBtn addTarget:self action:@selector(toggleMenu) forControlEvents:UIControlEventTouchUpInside];
+    CGRect screen = [UIScreen mainScreen].bounds;
+    self.anchor = CGPointMake(screen.size.width - kBarW - 14, 110);
 
-    UIPanGestureRecognizer* pan = [[UIPanGestureRecognizer alloc] initWithTarget:self action:@selector(panMenu:)];
-    [self.toggleBtn addGestureRecognizer:pan];
+    UIButton* gear = [UIButton buttonWithType:UIButtonTypeCustom];
+    gear.frame = CGRectMake(8, 4, 32, 32);
+    gear.backgroundColor = ThemeColor(30, 160, 90);
+    gear.layer.cornerRadius = 16;
+    gear.layer.shadowColor = [UIColor blackColor].CGColor;
+    gear.layer.shadowOpacity = 0.7;
+    gear.layer.shadowRadius = 3;
+    gear.layer.shadowOffset = CGSizeMake(0, 2);
+    [gear setTitle:@"⚙" forState:UIControlStateNormal];
+    gear.titleLabel.font = [UIFont boldSystemFontOfSize:16];
+    [gear addTarget:self action:@selector(toggleMenu) forControlEvents:UIControlEventTouchUpInside];
+    [self.view addSubview:gear];
+    self.toggleBtn = gear;
 
-    [self.view addSubview:self.toggleBtn];
+    UILabel* title = [[UILabel alloc] initWithFrame:CGRectMake(48, 8, 116, 22)];
+    title.text = @"StandoffCheat";
+    title.textColor = [UIColor whiteColor];
+    title.font = [UIFont boldSystemFontOfSize:13];
+    [self.view addSubview:title];
 
-    self.menuPanel = [[UIView alloc] initWithFrame:CGRectMake(10, 50, 250, 0)];
-    self.menuPanel.backgroundColor = [ThemeColor(18, 20, 28) colorWithAlphaComponent:0.95];
-    self.menuPanel.layer.cornerRadius = 12;
+    UIView* headerBar = [[UIView alloc] initWithFrame:CGRectMake(0, 0, kBarW, kBarH)];
+    headerBar.backgroundColor = [ThemeColor(18, 20, 28) colorWithAlphaComponent:0.92];
+    headerBar.layer.cornerRadius = 10;
+    headerBar.layer.borderColor = ThemeColor(30, 160, 90).CGColor;
+    headerBar.layer.borderWidth = 1.2;
+    headerBar.tag = 777;
+    [self.view addSubview:headerBar];
+
+    UIPanGestureRecognizer* barPan = [[UIPanGestureRecognizer alloc] initWithTarget:self action:@selector(dragMenu:)];
+    [headerBar addGestureRecognizer:barPan];
+
+    self.menuPanel = [[UIView alloc] initWithFrame:CGRectMake(0, kBarH, kPanelW, 0)];
+    self.menuPanel.backgroundColor = [ThemeColor(14, 16, 22) colorWithAlphaComponent:0.96];
+    self.menuPanel.layer.cornerRadius = 10;
     self.menuPanel.layer.borderColor = ThemeColor(30, 160, 90).CGColor;
-    self.menuPanel.layer.borderWidth = 1.5;
+    self.menuPanel.layer.borderWidth = 1.2;
     self.menuPanel.clipsToBounds = YES;
     self.menuPanel.hidden = YES;
     [self.view addSubview:self.menuPanel];
 
-    UIPanGestureRecognizer* panelPan = [[UIPanGestureRecognizer alloc] initWithTarget:self action:@selector(panMenu:)];
+    UIPanGestureRecognizer* panelPan = [[UIPanGestureRecognizer alloc] initWithTarget:self action:@selector(dragMenu:)];
     panelPan.delegate = self;
     [self.menuPanel addGestureRecognizer:panelPan];
 
@@ -90,90 +87,176 @@ static UIColor* ThemeColor(int r, int g, int b) {
     return YES;
 }
 
-- (void)panMenu:(UIPanGestureRecognizer*)pan {
-    CGRect b = self.view.bounds;
-    CGPoint t = [pan translationInView:self.view];
+- (void)dragMenu:(UIPanGestureRecognizer*)gr {
+    CGPoint t = [gr translationInView:self.view];
+    CGRect f = g_menuWindow.frame;
+    self.anchor.x += t.x;
+    self.anchor.y += t.y;
+    [self clampAnchorToScreen];
+    f.origin = self.anchor;
+    g_menuWindow.frame = f;
+    [gr setTranslation:CGPointZero inView:self.view];
+}
 
-    CGRect tf = self.toggleBtn.frame;
-    CGRect pf = self.menuPanel.frame;
-
-    tf.origin.x += t.x;
-    tf.origin.y += t.y;
-    tf.origin.x = MAX(10, MIN(tf.origin.x, b.size.width - tf.size.width - 10));
-    tf.origin.y = MAX(30, MIN(tf.origin.y, b.size.height - tf.size.height - 30));
-
-    pf.origin.x += t.x;
-    pf.origin.y += t.y;
-    pf.origin.x = MAX(8, MIN(pf.origin.x, b.size.width - pf.size.width - 8));
-    pf.origin.y = MAX(20, MIN(pf.origin.y, b.size.height - pf.size.height - 20));
-
-    self.toggleBtn.frame = tf;
-    self.menuPanel.frame = pf;
-    [pan setTranslation:CGPointZero inView:self.view];
+- (void)clampAnchorToScreen {
+    CGRect screen = [UIScreen mainScreen].bounds;
+    CGRect f = g_menuWindow.frame;
+    self.anchor.x = MAX(6, MIN(self.anchor.x, screen.size.width - f.size.width - 6));
+    self.anchor.y = MAX(24, MIN(self.anchor.y, screen.size.height - f.size.height - 6));
 }
 
 - (void)toggleMenu {
     self.expanded = !self.expanded;
     self.menuPanel.hidden = !self.expanded;
+    if (self.expanded) [self.menuPanel.superview bringSubviewToFront:self.menuPanel];
     g_config.menuOpen = self.expanded;
+    [self updateWindowFrame];
+}
+
+- (void)updateWindowFrame {
+    if (!g_menuWindow) return;
+    CGRect f = g_menuWindow.frame;
+    if (self.expanded) {
+        f.size = CGSizeMake(kPanelW, kBarH + self.panelHeight);
+    } else {
+        f.size = CGSizeMake(kBarW, kBarH);
+    }
+    f.origin = self.anchor;
+    g_menuWindow.frame = f;
+    [self clampAnchorToScreen];
+    f.origin = self.anchor;
+    g_menuWindow.frame = f;
+    [self.view setNeedsLayout];
+}
+
+- (void)viewDidLayoutSubviews {
+    [super viewDidLayoutSubviews];
+    CGRect b = self.view.bounds;
+    UIView* bar = [self.view viewWithTag:777];
+    if (bar) bar.frame = CGRectMake(0, 0, b.size.width, kBarH);
+    self.menuPanel.frame = CGRectMake(0, kBarH, b.size.width, b.size.height - kBarH);
+    self.toggleBtn.frame = CGRectMake(8, 4, 32, 32);
+}
+
+#pragma mark - UI building
+
+- (void)addToggleCol:(CGFloat)colX label:(NSString*)label tag:(NSInteger)tag y:(CGFloat)y {
+    CGFloat colW = (kPanelW - 26) / 2.0;
+    UILabel* txt = [[UILabel alloc] initWithFrame:CGRectMake(colX + 6, y + 2, colW - 62, 18)];
+    txt.text = label;
+    txt.textColor = [UIColor whiteColor];
+    txt.font = [UIFont systemFontOfSize:12];
+    [self.menuPanel addSubview:txt];
+
+    UISwitch* sw = [[UISwitch alloc] initWithFrame:CGRectMake(colX + colW - 50, y - 1, 48, 20)];
+    sw.onTintColor = ThemeColor(30, 160, 90);
+    sw.transform = CGAffineTransformMakeScale(0.62, 0.62);
+    sw.tag = tag;
+    switch (tag) {
+        case 1: sw.on = g_config.espEnabled; break;
+        case 2: sw.on = g_config.espBoxes; break;
+        case 3: sw.on = g_config.espHealthBars; break;
+        case 4: sw.on = g_config.espNames; break;
+        case 5: sw.on = g_config.espSnaplines; break;
+        case 6: sw.on = g_config.espDistance; break;
+        case 7: sw.on = g_config.espTeamColor; break;
+        case 8: sw.on = g_config.aimbotEnabled; break;
+        case 9: sw.on = g_config.aimbotOnShoot; break;
+        case 10: sw.on = g_config.aimbotShowFov; break;
+        case 11: sw.on = g_config.recoilEnabled; break;
+        default: break;
+    }
+    [sw addTarget:self action:@selector(switchChanged:) forControlEvents:UIControlEventValueChanged];
+    [self.menuPanel addSubview:sw];
+}
+
+- (void)addSliderCol:(CGFloat)colX label:(NSString*)label fmt:(NSString*)fmt tag:(NSInteger)tag y:(CGFloat)y {
+    CGFloat colW = (kPanelW - 26) / 2.0;
+    UILabel* t = [[UILabel alloc] initWithFrame:CGRectMake(colX + 6, y, colW - 60, 16)];
+    t.text = label;
+    t.textColor = [UIColor whiteColor];
+    t.font = [UIFont systemFontOfSize:11];
+    [self.menuPanel addSubview:t];
+
+    UILabel* v = [[UILabel alloc] initWithFrame:CGRectMake(colX + colW - 58, y, 52, 16)];
+    v.textAlignment = NSTextAlignmentRight;
+    v.textColor = ThemeColor(120, 220, 160);
+    v.font = [UIFont systemFontOfSize:11];
+    v.tag = tag + 1000;
+    v.text = [NSString stringWithFormat:fmt, tag == 20 ? g_config.aimbotFov : g_config.aimbotSmooth];
+    [self.menuPanel addSubview:v];
+
+    UISlider* sl = [[UISlider alloc] initWithFrame:CGRectMake(colX + 6, y + 16, colW - 12, 16)];
+    sl.minimumValue = (tag == 20) ? 10 : 1;
+    sl.maximumValue = (tag == 20) ? 200 : 20;
+    sl.value = (tag == 20) ? g_config.aimbotFov : g_config.aimbotSmooth;
+    sl.minimumTrackTintColor = ThemeColor(30, 160, 90);
+    sl.tag = tag;
+    [sl addTarget:self action:@selector(sliderChanged:) forControlEvents:UIControlEventValueChanged];
+    [self.menuPanel addSubview:sl];
 }
 
 - (void)addSection:(NSString*)title y:(CGFloat*)y {
-    UILabel* label = [[UILabel alloc] initWithFrame:CGRectMake(14, *y, 222, 24)];
+    UILabel* label = [[UILabel alloc] initWithFrame:CGRectMake(12, *y + 1, 376, 16)];
     label.text = title;
     label.textColor = ThemeColor(90, 210, 130);
-    label.font = [UIFont boldSystemFontOfSize:14];
+    label.font = [UIFont boldSystemFontOfSize:12];
     [self.menuPanel addSubview:label];
-    *y += 26;
+    *y += 18;
 }
 
-- (void)addToggle:(NSString*)label target:(BOOL*)target y:(CGFloat*)y renderTag:(NSInteger)tag {
-    CGFloat rowW = 222, rowH = 30;
+- (void)rebuildMenu {
+    for (UIView* v in self.menuPanel.subviews) [v removeFromSuperview];
 
-    UILabel* txt = [[UILabel alloc] initWithFrame:CGRectMake(16, *y + 5, 150, 20)];
-    txt.text = label;
-    txt.textColor = [UIColor whiteColor];
-    txt.font = [UIFont systemFontOfSize:13];
-    [self.menuPanel addSubview:txt];
+    CGFloat y = 6;
+    CGFloat colW = (kPanelW - 26) / 2.0;
+    CGFloat c1 = 10, c2 = 16 + colW;
 
-    UISwitch* sw = [[UISwitch alloc] initWithFrame:CGRectMake(172, *y, 48, rowH)];
-    sw.on = *target;
-    sw.onTintColor = ThemeColor(30, 160, 90);
-    sw.tag = tag;
-    [sw addTarget:self action:@selector(switchChanged:) forControlEvents:UIControlEventValueChanged];
-    [self.menuPanel addSubview:sw];
+    [self addSection:@"ESP" y:&y];
 
-    *y += rowH;
+    NSArray* espToggles = @[ @1, @2, @3, @4, @5, @6, @7 ];
+    NSArray* espLabels = @[ @"ESP Enabled", @"Boxes", @"Health Bars", @"Names", @"Snaplines", @"Distance", @"Team Colors" ];
+    for (NSUInteger i = 0; i < espToggles.count; i++) {
+        CGFloat colX = (i % 2 == 0) ? c1 : c2;
+        [self addToggleCol:colX label:espLabels[i] tag:[espToggles[i] integerValue] y:y];
+        if (i % 2 == 1) y += 22;
+    }
+    if (espToggles.count % 2 == 1) y += 22;
+
+    [self addSection:@"Aimbot" y:&y];
+
+    [self addToggleCol:c1 label:@"Aimbot" tag:8 y:y];
+    [self addToggleCol:c2 label:@"Shoot Only" tag:9 y:y];
+    y += 22;
+
+    [self addSliderCol:c1 label:@"FOV" fmt:@"%.0f°" tag:20 y:y];
+    [self addSliderCol:c2 label:@"Smooth" fmt:@"%.0f" tag:21 y:y];
+    y += 36;
+
+    [self addToggleCol:c1 label:@"Show FOV Ring" tag:10 y:y];
+    y += 22;
+
+    [self addSection:@"Recoil" y:&y];
+    [self addToggleCol:c1 label:@"No Recoil" tag:11 y:y];
+    y += 22;
+
+    y += 2;
+
+    UIButton* closeBtn = [UIButton buttonWithType:UIButtonTypeCustom];
+    closeBtn.frame = CGRectMake(10, y, kPanelW - 20, 26);
+    closeBtn.backgroundColor = ThemeColor(200, 50, 50);
+    closeBtn.layer.cornerRadius = 6;
+    [closeBtn setTitle:@"Close" forState:UIControlStateNormal];
+    closeBtn.titleLabel.font = [UIFont boldSystemFontOfSize:13];
+    [closeBtn addTarget:self action:@selector(toggleMenu) forControlEvents:UIControlEventTouchUpInside];
+    [self.menuPanel addSubview:closeBtn];
+    y += 32;
+
+    self.panelHeight = y + 4;
+    [self updateWindowFrame];
 }
 
-- (void)addSlider:(NSString*)label fmt:(NSString*)fmt value:(float)val min:(float)min max:(float)max target:(float*)target y:(CGFloat*)y tag:(NSInteger)tag {
-    CGFloat rowW = 222, rowH = 44;
-
-    UILabel* title = [[UILabel alloc] initWithFrame:CGRectMake(16, *y, 150, 20)];
-    title.text = label;
-    title.textColor = [UIColor whiteColor];
-    title.font = [UIFont systemFontOfSize:13];
-    [self.menuPanel addSubview:title];
-
-    UILabel* valueLabel = [[UILabel alloc] initWithFrame:CGRectMake(150, *y, 88, 20)];
-    valueLabel.textAlignment = NSTextAlignmentRight;
-    valueLabel.textColor = ThemeColor(120, 220, 160);
-    valueLabel.font = [UIFont systemFontOfSize:12];
-    valueLabel.tag = tag + 1000;
-    valueLabel.text = [NSString stringWithFormat:fmt, val];
-    [self.menuPanel addSubview:valueLabel];
-
-    UISlider* slider = [[UISlider alloc] initWithFrame:CGRectMake(16, *y + 22, 218, 22)];
-    slider.minimumValue = min;
-    slider.maximumValue = max;
-    slider.value = val;
-    slider.minimumTrackTintColor = ThemeColor(30, 160, 90);
-    slider.tag = tag;
-    [slider addTarget:self action:@selector(sliderChanged:) forControlEvents:UIControlEventValueChanged];
-    [self.menuPanel addSubview:slider];
-
-    *y += rowH;
-}
+#pragma mark - Control events
 
 - (void)switchChanged:(UISwitch*)sw {
     switch (sw.tag) {
@@ -194,87 +277,27 @@ static UIColor* ThemeColor(int r, int g, int b) {
 
 - (void)sliderChanged:(UISlider*)slider {
     float v = slider.value;
-    switch (slider.tag) {
-        case 20: {
-            g_config.aimbotFov = v;
-            UILabel* lbl = (UILabel*)[self.menuPanel viewWithTag:1020];
-            lbl.text = [NSString stringWithFormat:@"%.0f°", v];
-            break;
-        }
-        case 21: {
-            g_config.aimbotSmooth = v;
-            UILabel* lbl = (UILabel*)[self.menuPanel viewWithTag:1021];
-            lbl.text = [NSString stringWithFormat:@"%.0f", v];
-            break;
-        }
-        default: break;
+    if (slider.tag == 20) {
+        g_config.aimbotFov = v;
+        UILabel* lbl = (UILabel*)[self.menuPanel viewWithTag:1020];
+        lbl.text = [NSString stringWithFormat:@"%.0f°", v];
+    } else if (slider.tag == 21) {
+        g_config.aimbotSmooth = v;
+        UILabel* lbl = (UILabel*)[self.menuPanel viewWithTag:1021];
+        lbl.text = [NSString stringWithFormat:@"%.0f", v];
     }
 }
 
-- (void)rebuildMenu {
-    for (UIView* v in self.menuPanel.subviews) [v removeFromSuperview];
-
-    CGFloat y = 10;
-
-    UILabel* title = [[UILabel alloc] initWithFrame:CGRectMake(14, y, 220, 26)];
-    title.text = @"StandoffCheat v1.0";
-    title.textColor = [UIColor whiteColor];
-    title.font = [UIFont boldSystemFontOfSize:16];
-    [self.menuPanel addSubview:title];
-    y += 24;
-
-    [self addSection:@"ESP" y:&y];
-    [self addToggle:@"ESP Enabled" target:&g_config.espEnabled y:&y renderTag:1];
-    [self addToggle:@"Boxes" target:&g_config.espBoxes y:&y renderTag:2];
-    [self addToggle:@"Health Bars" target:&g_config.espHealthBars y:&y renderTag:3];
-    [self addToggle:@"Names" target:&g_config.espNames y:&y renderTag:4];
-    [self addToggle:@"Snaplines" target:&g_config.espSnaplines y:&y renderTag:5];
-    [self addToggle:@"Distance" target:&g_config.espDistance y:&y renderTag:6];
-    [self addToggle:@"Team Colors" target:&g_config.espTeamColor y:&y renderTag:7];
-
-    [self addSection:@"Aimbot" y:&y];
-    [self addToggle:@"Aimbot" target:&g_config.aimbotEnabled y:&y renderTag:8];
-    [self addToggle:@"Shoot Only" target:&g_config.aimbotOnShoot y:&y renderTag:9];
-    [self addSlider:@"FOV" fmt:@"%.0f°" value:g_config.aimbotFov min:10 max:200 target:&g_config.aimbotFov y:&y tag:20];
-    [self addSlider:@"Smooth" fmt:@"%.0f" value:g_config.aimbotSmooth min:1 max:20 target:&g_config.aimbotSmooth y:&y tag:21];
-    [self addToggle:@"Show FOV Ring" target:&g_config.aimbotShowFov y:&y renderTag:10];
-
-    [self addSection:@"Recoil" y:&y];
-    [self addToggle:@"No Recoil" target:&g_config.recoilEnabled y:&y renderTag:11];
-
-    y += 6;
-    UIButton* closeBtn = [UIButton buttonWithType:UIButtonTypeCustom];
-    closeBtn.frame = CGRectMake(16, y, 218, 32);
-    closeBtn.backgroundColor = ThemeColor(200, 50, 50);
-    closeBtn.layer.cornerRadius = 8;
-    [closeBtn setTitle:@"Close" forState:UIControlStateNormal];
-    [closeBtn.titleLabel setFont:[UIFont boldSystemFontOfSize:15]];
-    [closeBtn addTarget:self action:@selector(toggleMenu) forControlEvents:UIControlEventTouchUpInside];
-    [self.menuPanel addSubview:closeBtn];
-    y += 46;
-
-    CGRect panelFrame = self.menuPanel.frame;
-    panelFrame.size.height = y;
-    panelFrame.size.width = 250;
-    self.menuPanel.frame = panelFrame;
-}
-
-- (void)viewDidLayoutSubviews {
-    [super viewDidLayoutSubviews];
-    if (self.layoutDone) return;
-    CGFloat w = self.view.bounds.size.width;
-    CGFloat h = self.view.bounds.size.height;
-    self.toggleBtn.frame = CGRectMake(w - 62, h * 0.18f, 48, 48);
-    self.menuPanel.frame = CGRectMake(10, 50, 250, self.menuPanel.bounds.size.height);
-    self.layoutDone = YES;
-}
 @end
+
+#pragma mark - C API
 
 void SetupMenuWindow() {
     if (g_menuWindow) return;
     dispatch_async(dispatch_get_main_queue(), ^{
         if (g_menuWindow) return;
-        g_menuWindow = [[UIWindow alloc] initWithFrame:[UIScreen mainScreen].bounds];
+        CGRect screen = [UIScreen mainScreen].bounds;
+        g_menuWindow = [[UIWindow alloc] initWithFrame:CGRectMake(screen.size.width - kBarW - 14, 110, kBarW, kBarH)];
         g_menuWindow.windowLevel = UIWindowLevelStatusBar + 50;
         g_menuWindow.userInteractionEnabled = YES;
         g_menuWindow.backgroundColor = [UIColor clearColor];

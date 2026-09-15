@@ -9,7 +9,6 @@
 @property (nonatomic, assign) BOOL expanded;
 - (void)toggleMenu;
 - (void)rebuildMenu;
-- (void)addSection:(NSString*)title y:(CGFloat*)y NS_SWIFT_NAME(addSection(y:));
 @end
 
 extern CheatMenuController* g_menuController;
