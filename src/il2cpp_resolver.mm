@@ -17,8 +17,8 @@ extern "C" {
     DEFINE_FPTR(size_t, il2cpp_field_get_offset, (const Il2CppFieldInfo*));
     DEFINE_FPTR(const char*, il2cpp_field_get_name, (const Il2CppFieldInfo*));
     DEFINE_FPTR(const Il2CppType*, il2cpp_field_get_type, (const Il2CppFieldInfo*));
-    DEFINE_FPTR(void, il2cpp_field_get_value, (Il2CppObject*, const Il2CppFieldInfo*, void*));
-    DEFINE_FPTR(void, il2cpp_field_set_value, (Il2CppObject*, const Il2CppFieldInfo*, const void*));
+    DEFINE_FPTR(void, il2cpp_field_get_value, (void*, const Il2CppFieldInfo*, void*));
+    DEFINE_FPTR(void, il2cpp_field_set_value, (void*, const Il2CppFieldInfo*, const void*));
     DEFINE_FPTR(void, il2cpp_field_static_get_value, (const Il2CppFieldInfo*, void*));
     DEFINE_FPTR(void, il2cpp_field_static_set_value, (const Il2CppFieldInfo*, const void*));
     DEFINE_FPTR(Il2CppObject*, il2cpp_runtime_invoke, (const Il2CppMethodInfo*, void*, void**, Il2CppException**));

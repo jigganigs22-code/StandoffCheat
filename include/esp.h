@@ -1,4 +1,5 @@
 #pragma once
+#import <CoreGraphics/CoreGraphics.h>
 #import "cheat_data.h"
 #import "il2cpp_resolver.h"
 

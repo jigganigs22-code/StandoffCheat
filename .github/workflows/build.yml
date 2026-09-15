@@ -29,6 +29,9 @@ jobs:
           clang -O2 /tmp/insert_dylib/insert_dylib/main.c -o /tmp/insert_dylib/bin/insert_dylib
           echo "/tmp/insert_dylib/bin" >> "$GITHUB_PATH"
 
+      - name: Build dylib
+        run: bash build.sh
+
       - name: Obtain IPA
         id: ipa
         env:
@@ -53,9 +56,6 @@ jobs:
           IPA_FILE="$(ls *.ipa | head -1)"
           echo "IPA copy present: $IPA_FILE"
           echo "ipa_file=$IPA_FILE" >> "$GITHUB_OUTPUT"
-
-      - name: Build dylib
-        run: bash build.sh
 
       - name: Inject dylib into IPA
         run: |

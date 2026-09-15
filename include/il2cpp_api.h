@@ -29,8 +29,8 @@ extern "C" {
     extern size_t (*il2cpp_field_get_offset)(const Il2CppFieldInfo* field);
     extern const char* (*il2cpp_field_get_name)(const Il2CppFieldInfo* field);
     extern const Il2CppType* (*il2cpp_field_get_type)(const Il2CppFieldInfo* field);
-    extern void (*il2cpp_field_get_value)(Il2CppObject* obj, const Il2CppFieldInfo* field, void* value);
-    extern void (*il2cpp_field_set_value)(Il2CppObject* obj, const Il2CppFieldInfo* field, const void* value);
+    extern void (*il2cpp_field_get_value)(void* obj, const Il2CppFieldInfo* field, void* value);
+    extern void (*il2cpp_field_set_value)(void* obj, const Il2CppFieldInfo* field, const void* value);
     extern void (*il2cpp_field_static_get_value)(const Il2CppFieldInfo* field, void* value);
     extern void (*il2cpp_field_static_set_value)(const Il2CppFieldInfo* field, const void* value);
 
