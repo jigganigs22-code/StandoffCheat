@@ -1,0 +1,70 @@
+name: Build StandoffCheat IPA
+
+on:
+  workflow_dispatch:
+    inputs:
+      ipa:
+        description: 'IPA source. Options: "release" (grab latest .ipa from Releases) or a direct https URL.'
+        required: false
+        default: 'release'
+      sign:
+        description: 'codesign identity for the macOS build (default: ad-hoc "-")'
+        required: false
+        default: '-'
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: macos-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Build insert_dylib
+        run: |
+          git clone --depth 1 https://github.com/Tyilo/insert_dylib /tmp/insert_dylib
+          make -C /tmp/insert_dylib
+          echo "/tmp/insert_dylib" >> "$GITHUB_PATH"
+
+      - name: Obtain IPA
+        id: ipa
+        run: |
+          INPUT="${{ github.event.inputs.ipa }}"
+          case "$INPUT" in
+            ""|release)
+              ASSET_URL="$(gh release view --repo "${{ github.repository }}" --json assets --jq '.assets[] | select(.name | test("\\.ipa$")) | .url' | head -1)"
+              [ -n "$ASSET_URL" ] || { echo "::error::No .ipa asset found in latest release. Upload the IPA as a release asset."; exit 1; }
+              echo "Downloading release asset: $ASSET_URL"
+              gh release download --repo "${{ github.repository }}" --pattern '*.ipa' --clobber
+              ;;
+            http*)
+              echo "Downloading IPA from URL"
+              curl -fL --retry 3 -o source.ipa "$INPUT"
+              ;;
+            *)
+              echo "::error::Could not parse ipa input: $INPUT"; exit 1
+              ;;
+          esac
+          IPA_FILE="$(ls *.ipa | head -1)"
+          echo "IPA copy present: $IPA_FILE"
+          echo "ipa_file=$IPA_FILE" >> "$GITHUB_OUTPUT"
+
+      - name: Build dylib
+        run: bash build.sh
+
+      - name: Inject dylib into IPA
+        run: |
+          mkdir -p output
+          bash inject.sh "${{ steps.ipa.outputs.ipa_file }}" "output/Standoff2-cheat.ipa"
+        env:
+          CODE_SIGN_IDENTITY: "${{ github.event.inputs.sign }}"
+
+      - name: Upload patched IPA
+        uses: actions/upload-artifact@v4
+        with:
+          name: Standoff2-cheat-ipa
+          path: output/Standoff2-cheat.ipa
+          retention-days: 7
+          if-no-files-found: error
