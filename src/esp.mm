@@ -118,7 +118,7 @@ static Vector3 GetBonePosition(void* playerController) {
 }
 
 void ESP::Initialize() {
-    NSLog(@"[StandoffCheat] ESP initialized");
+    CHEAT_LOG("e: init");
 }
 
 void ESP::Update() {

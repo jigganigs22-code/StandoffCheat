@@ -27,6 +27,20 @@ static const CGFloat kPanelW = 400;
     CGRect screen = [UIScreen mainScreen].bounds;
     self.anchor = CGPointMake(screen.size.width - kBarW - 14, 110);
 
+    UIView* headerBar = [[UIView alloc] initWithFrame:CGRectMake(0, 0, kBarW, kBarH)];
+    headerBar.backgroundColor = [ThemeColor(18, 20, 28) colorWithAlphaComponent:0.92];
+    headerBar.layer.cornerRadius = 10;
+    headerBar.layer.borderColor = ThemeColor(30, 160, 90).CGColor;
+    headerBar.layer.borderWidth = 1.2;
+    headerBar.tag = 777;
+    [self.view addSubview:headerBar];
+
+    UIPanGestureRecognizer* barPan = [[UIPanGestureRecognizer alloc] initWithTarget:self action:@selector(dragMenu:)];
+    [headerBar addGestureRecognizer:barPan];
+
+    UITapGestureRecognizer* barTap = [[UITapGestureRecognizer alloc] initWithTarget:self action:@selector(toggleMenu)];
+    [headerBar addGestureRecognizer:barTap];
+
     UIButton* gear = [UIButton buttonWithType:UIButtonTypeCustom];
     gear.frame = CGRectMake(8, 4, 32, 32);
     gear.backgroundColor = ThemeColor(30, 160, 90);
@@ -42,21 +56,10 @@ static const CGFloat kPanelW = 400;
     self.toggleBtn = gear;
 
     UILabel* title = [[UILabel alloc] initWithFrame:CGRectMake(48, 8, 116, 22)];
-    title.text = @"StandoffCheat";
+    title.text = @"R9";
     title.textColor = [UIColor whiteColor];
     title.font = [UIFont boldSystemFontOfSize:13];
     [self.view addSubview:title];
-
-    UIView* headerBar = [[UIView alloc] initWithFrame:CGRectMake(0, 0, kBarW, kBarH)];
-    headerBar.backgroundColor = [ThemeColor(18, 20, 28) colorWithAlphaComponent:0.92];
-    headerBar.layer.cornerRadius = 10;
-    headerBar.layer.borderColor = ThemeColor(30, 160, 90).CGColor;
-    headerBar.layer.borderWidth = 1.2;
-    headerBar.tag = 777;
-    [self.view addSubview:headerBar];
-
-    UIPanGestureRecognizer* barPan = [[UIPanGestureRecognizer alloc] initWithTarget:self action:@selector(dragMenu:)];
-    [headerBar addGestureRecognizer:barPan];
 
     self.menuPanel = [[UIView alloc] initWithFrame:CGRectMake(0, kBarH, kPanelW, 0)];
     self.menuPanel.backgroundColor = [ThemeColor(14, 16, 22) colorWithAlphaComponent:0.96];

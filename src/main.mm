@@ -152,10 +152,7 @@ static void FinishInitialize() {
     g_resolver = r;
     g_config.initialized = true;
     g_hooked = true;
-    CHEAT_LOG("w: HOOKED — PlayerController=%p Transform=%p Camera=%p",
-              (void*)r->classes.PlayerController,
-              (void*)r->classes.Transform,
-              (void*)r->classes.Camera);
+    CHEAT_LOG("w: ready");
 }
 
 static void* cheatWorker(void* arg) {
@@ -220,7 +217,7 @@ static void StandoffCheatInit() {
 
     CHEAT_LOG_OPEN();
     CHEAT_INSTALL_CRASH_HANDLERS();
-    CHEAT_LOG("init: starting — Standoff 2 cheat");
+    CHEAT_LOG("init: start");
 
     pthread_t thread;
     pthread_create(&thread, NULL, cheatWorker, NULL);

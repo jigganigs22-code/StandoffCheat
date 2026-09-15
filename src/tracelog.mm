@@ -13,10 +13,10 @@ static void OpenLog(void) {
     NSString* dir = [NSSearchPathForDirectoriesInDomains(NSDocumentDirectory, NSUserDomainMask, YES) firstObject];
     if (!dir) dir = [NSHomeDirectory() stringByAppendingPathComponent:@"Documents"];
     [[NSFileManager defaultManager] createDirectoryAtPath:dir withIntermediateDirectories:YES attributes:nil error:nil];
-    NSString* path = [dir stringByAppendingPathComponent:@"cheatlog.txt"];
+    NSString* path = [dir stringByAppendingPathComponent:@"apptrace.log"];
     NSDictionary* attrs = [[NSFileManager defaultManager] attributesOfItemAtPath:path error:nil];
     if (attrs && [attrs[NSFileSize] longLongValue] > 1024 * 1024) {
-        NSString* old = [dir stringByAppendingPathComponent:@"cheatlog.txt.old"];
+        NSString* old = [dir stringByAppendingPathComponent:@"apptrace.log.old"];
         [[NSFileManager defaultManager] removeItemAtPath:old error:nil];
         [[NSFileManager defaultManager] moveItemAtPath:path toPath:old error:nil];
     }

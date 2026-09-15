@@ -175,10 +175,10 @@ bool IL2CPPResolver::Initialize() {
     if (classes.GameObject) found++;
     if (classes.PhotonView) found++;
 
-    printf("[StandoffCheat] Resolved %d core classes\n", found);
+    printf("Resolved %d core classes\n", found);
 
     if (found < 4) {
-        printf("[StandoffCheat] WARNING: Too few classes resolved, retrying...\n");
+        printf("WARNING: Too few classes resolved, retrying...\n");
         return false;
     }
 

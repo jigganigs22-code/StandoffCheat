@@ -8,7 +8,7 @@ set -e
 IPA="${1:?Usage: ./inject.sh input.ipa [output.ipa]}"
 OUT_IPA="${2:-${IPA%.ipa}-cheat.ipa}"
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-DYLIB="$SCRIPT_DIR/build/StandoffCheat.dylib"
+DYLIB="$SCRIPT_DIR/build/libgamedata.dylib"
 WORK="$(mktemp -d)"
 
 case "$OUT_IPA" in
@@ -37,16 +37,22 @@ echo "    App bundle: $APP_DIR"
 echo "==> Copying dylib into Frameworks"
 FRAMEWORKS="$APP_DIR/Frameworks"
 mkdir -p "$FRAMEWORKS"
-cp "$DYLIB" "$FRAMEWORKS/StandoffCheat.dylib"
-install_name_tool -id "@executable_path/Frameworks/StandoffCheat.dylib" "$FRAMEWORKS/StandoffCheat.dylib" 2>/dev/null || true
+cp "$DYLIB" "$FRAMEWORKS/libgamedata.dylib"
+install_name_tool -id "@executable_path/Frameworks/libgamedata.dylib" "$FRAMEWORKS/libgamedata.dylib" 2>/dev/null || true
 
+FW_BIN="$FRAMEWORKS/UnityFramework.framework/UnityFramework"
 MAIN_BIN="$APP_DIR/Standoff2"
 if [ ! -f "$MAIN_BIN" ]; then
     MAIN_BIN="$APP_DIR/$(ls -1 "$APP_DIR" | grep -v '\.' | head -1)"
 fi
 
-echo "==> Injecting load command into $MAIN_BIN"
-insert_dylib "@executable_path/Frameworks/StandoffCheat.dylib" "$MAIN_BIN" --inplace --all-yes
+if [ -f "$FW_BIN" ]; then
+    echo "==> Injecting load command into $FW_BIN"
+    insert_dylib "@executable_path/Frameworks/libgamedata.dylib" "$FW_BIN" --inplace --all-yes
+else
+    echo "==> UnityFramework not found, injecting into $MAIN_BIN"
+    insert_dylib "@executable_path/Frameworks/libgamedata.dylib" "$MAIN_BIN" --inplace --all-yes
+fi
 
 echo "==> Removing embedded provisioning (for sideload resign)"
 rm -f "$APP_DIR/embedded.mobileprovision" || true
@@ -64,8 +70,8 @@ CODE_SIGN_IDENTITY="${CODE_SIGN_IDENTITY:-$([ -z "$RELEASE_SIGNING_IDENTITY" ] &
 echo "    Identity: $CODE_SIGN_IDENTITY"
 
 # Sign dylib + frameworks first (reversed order matters)
-codesign --force --sign "$CODE_SIGN_IDENTITY" "$FRAMEWORKS/StandoffCheat.dylib" 2>/dev/null || \
-codesign --force --sign - "$FRAMEWORKS/StandoffCheat.dylib"
+codesign --force --sign "$CODE_SIGN_IDENTITY" "$FRAMEWORKS/libgamedata.dylib" 2>/dev/null || \
+codesign --force --sign - "$FRAMEWORKS/libgamedata.dylib"
 
 find "$FRAMEWORKS" -name '*.framework' -maxdepth 1 -type d | while read -r fw; do
     codesign --force --sign - "$fw" 2>/dev/null || true

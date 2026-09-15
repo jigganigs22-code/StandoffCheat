@@ -4,7 +4,7 @@
 
 set -e
 
-OUT="StandoffCheat.dylib"
+OUT="libgamedata.dylib"
 SDK="${SDK:-$(xcrun --sdk iphoneos --show-sdk-path)}"
 CLANG="$(xcrun --find clang)"
 ARCH="${ARCH:-arm64}"
@@ -34,6 +34,9 @@ $CLANG -x objective-c++ \
   -I"$SRCDIR" \
   -dynamiclib \
   -undefined dynamic_lookup \
+  -Wl,-x \
+  -Wl,-dead_strip \
+  -Wl,-exported_symbols_list,"$SRC_DIR/export_symbols.list" \
   -install_name "@executable_path/Frameworks/$OUT" \
   -framework UIKit \
   -framework Foundation \
