@@ -9,10 +9,10 @@ static UIColor* ThemeColor(int r, int g, int b) {
 }
 
 @interface CheatMenuRootView : UIView
-@property (nonatomic, weak) CheatMenuController* host;
+@property (nonatomic, assign) CheatMenuController* host;
 @end
 
-@interface CheatMenuController ()
+@interface CheatMenuController () <UIGestureRecognizerDelegate>
 @property (nonatomic, assign) BOOL layoutDone;
 @end
 
@@ -70,8 +70,24 @@ static UIColor* ThemeColor(int r, int g, int b) {
     self.menuPanel.hidden = YES;
     [self.view addSubview:self.menuPanel];
 
+    UIPanGestureRecognizer* panelPan = [[UIPanGestureRecognizer alloc] initWithTarget:self action:@selector(panMenu:)];
+    panelPan.delegate = self;
+    [self.menuPanel addGestureRecognizer:panelPan];
+
     self.expanded = NO;
     [self rebuildMenu];
+}
+
+- (BOOL)gestureRecognizerShouldBegin:(UIGestureRecognizer*)gr {
+    if (gr.view == self.menuPanel) {
+        CGPoint p = [gr locationInView:self.menuPanel];
+        for (UIView* sub in self.menuPanel.subviews) {
+            if ([sub isKindOfClass:[UIControl class]] && CGRectContainsPoint(sub.frame, p)) {
+                return NO;
+            }
+        }
+    }
+    return YES;
 }
 
 - (void)panMenu:(UIPanGestureRecognizer*)pan {
