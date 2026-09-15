@@ -43,6 +43,7 @@ $CLANG -x objective-c++ \
   -o "build/$OUT" \
   "$SRCDIR/main.mm" \
   "$SRCDIR/il2cpp_resolver.mm" \
+  "$SRCDIR/tracelog.mm" \
   "$SRCDIR/w2s.mm" \
   "$SRCDIR/esp.mm" \
   "$SRCDIR/aimbot.mm" \

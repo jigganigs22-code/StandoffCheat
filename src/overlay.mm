@@ -1,6 +1,8 @@
 #import "overlay.h"
 #import <QuartzCore/QuartzCore.h>
 
+extern void CheatUpdateMainThread(void);
+
 static UIWindow* g_overlayWindow = nil;
 static ESPOverlayView* g_overlayView = nil;
 static CADisplayLink* g_displayLink = nil;
@@ -38,7 +40,8 @@ static ESP* g_espPtr = nullptr;
 }
 
 - (void)displayLinkTick:(CADisplayLink*)link {
-    [self setNeedsDisplay];
+    CheatUpdateMainThread();
+    if (g_espPtr && g_config.initialized) [self setNeedsDisplay];
 }
 
 @end

@@ -21,6 +21,7 @@ private:
 
     CGFloat m_screenWidth = 0;
     CGFloat m_screenHeight = 0;
+    double m_lastCollect = 0;
 };
 
 ESP* GetESP();

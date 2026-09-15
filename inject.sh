@@ -51,6 +51,14 @@ insert_dylib "@executable_path/Frameworks/StandoffCheat.dylib" "$MAIN_BIN" --inp
 echo "==> Removing embedded provisioning (for sideload resign)"
 rm -f "$APP_DIR/embedded.mobileprovision" || true
 
+echo "==> Enabling file sharing for diagnostics"
+PLIST="$APP_DIR/Info.plist"
+if [ -f "$PLIST" ]; then
+    /usr/libexec/PlistBuddy -c "Add :UIFileSharingEnabled bool true" "$PLIST" 2>/dev/null || \
+    /usr/libexec/PlistBuddy -c "Set :UIFileSharingEnabled true" "$PLIST" 2>/dev/null || true
+    /usr/libexec/PlistBuddy -c "Add :LSSupportsOpeningDocumentsInPlace bool true" "$PLIST" 2>/dev/null || true
+fi
+
 echo "==> Re-signing all binaries + frameworks"
 CODE_SIGN_IDENTITY="${CODE_SIGN_IDENTITY:-$([ -z "$RELEASE_SIGNING_IDENTITY" ] && echo "iPhone Developer" || echo "$RELEASE_SIGNING_IDENTITY")}"
 echo "    Identity: $CODE_SIGN_IDENTITY"

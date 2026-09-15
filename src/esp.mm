@@ -1,9 +1,14 @@
 #import "esp.h"
 #import "il2cpp_resolver.h"
 #import "w2s.h"
+#import "tracelog.h"
+#import <time.h>
 
 extern IL2CPPResolver* GetResolver();
 static ESP s_esp;
+
+static bool s_loggedMatch = false;
+static bool s_loggedEmpty = true;
 
 static Vector3 ReadVector3(void* obj, const Il2CppClass* klass, const char* field) {
     Vector3 out;
@@ -118,6 +123,13 @@ void ESP::Initialize() {
 
 void ESP::Update() {
     if (!g_config.initialized) return;
+
+    struct timespec ts;
+    clock_gettime(CLOCK_MONOTONIC, &ts);
+    double now = (double)ts.tv_sec + (double)ts.tv_nsec / 1e9;
+    if (now - m_lastCollect < 0.2) return;
+    m_lastCollect = now;
+
     CollectPlayers();
 }
 
@@ -244,6 +256,15 @@ void ESP::CollectPlayers() {
 
     std::lock_guard<std::recursive_mutex> lock(g_playersMutex);
     g_players.swap(collected);
+
+    if (!g_players.empty() && !s_loggedMatch) {
+        CHEAT_LOG("e: first match — %zu players", g_players.size());
+        s_loggedMatch = true;
+        s_loggedEmpty = false;
+    } else if (g_players.empty() && !s_loggedEmpty) {
+        CHEAT_LOG("e: scan returned empty");
+        s_loggedEmpty = true;
+    }
 }
 
 void ESP::Render(CGContextRef ctx, CGFloat width, CGFloat height) {

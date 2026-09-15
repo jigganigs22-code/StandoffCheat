@@ -10,6 +10,7 @@
 #import "esp.h"
 #import "aimbot.h"
 #import "recoil.h"
+#import "tracelog.h"
 
 IL2CPPResolver* g_resolver = nullptr;
 void* g_localPlayer = nullptr;
@@ -20,11 +21,10 @@ std::recursive_mutex g_playersMutex;
 CheatConfig g_config;
 
 static bool g_hooked = false;
-static dispatch_source_t g_timer = nil;
+static void* g_fwHandle = NULL;
+static bool g_bindingReady = false;
 
-static void HookRenderLoop();
-static void TryInitialize();
-static void UpdateLoop();
+#pragma mark - Process guard
 
 static BOOL IsRunningInStandoff() {
     NSString* bundleId = [[NSBundle mainBundle] bundleIdentifier];
@@ -45,7 +45,7 @@ static void* LoadIL2CppFunctions() {
     }
     void* handle = dlopen("@executable_path/Frameworks/UnityFramework.framework/UnityFramework", RTLD_NOW | RTLD_GLOBAL);
     if (!handle) handle = dlopen("UnityFramework", RTLD_NOW | RTLD_GLOBAL);
-    if (!handle) handle = dlopen(NULL, RTLD_NOW);
+    if (!handle) handle = dlopen(NULL, RTLD_LAZY);
     return handle;
 }
 
@@ -102,88 +102,106 @@ static bool BindIL2CppFunctions(void* handle) {
     }
 
     if (resolved < 20) {
-        NSLog(@"[StandoffCheat] IL2CPP binding failed: %d/%d resolved", resolved, 34);
+        CHEAT_LOG("t: IL2CPP binding failed %d/%d", resolved, 36);
         return false;
     }
-    NSLog(@"[StandoffCheat] IL2CPP API bound: %d symbols", resolved);
+    CHEAT_LOG("t: IL2CPP API bound, %d symbols", resolved);
     return true;
 }
 
-static void TryInitialize() {
+static int g_domainRetries = 0;
+static int g_resolverRetries = 0;
+
+static void FinishInitialize() {
+    CHEAT_LOG("m: FinishInitialize on main thread");
     if (g_hooked) return;
 
-    void* handle = LoadIL2CppFunctions();
-    if (!handle) return;
-
-    if (!BindIL2CppFunctions(handle)) return;
-
-    if (!il2cpp_domain_get) return;
-
-    g_resolver = new IL2CPPResolver();
-    if (!g_resolver->Initialize()) {
-        delete g_resolver;
-        g_resolver = nullptr;
+    if (!il2cpp_domain_get || !il2cpp_domain_get()) {
+        CHEAT_LOG("m: domain not ready yet");
+        if (g_domainRetries++ >= 120) { CHEAT_LOG("m: gave up waiting for domain"); return; }
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(500 * NSEC_PER_MSEC)),
+                       dispatch_get_main_queue(), ^{ FinishInitialize(); });
         return;
     }
 
+    g_resolver = new IL2CPPResolver();
+    if (!g_resolver->Initialize()) {
+        CHEAT_LOG("m: resolver Initialize FAILED — will retry");
+        delete g_resolver;
+        g_resolver = nullptr;
+        if (g_resolverRetries++ >= 60) { CHEAT_LOG("m: gave up on resolver"); return; }
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(1000 * NSEC_PER_MSEC)),
+                       dispatch_get_main_queue(), ^{ FinishInitialize(); });
+        return;
+    }
+    CHEAT_LOG("m: resolver ok — PlayerController=%p Transform=%p Camera=%p",
+              (void*)g_resolver->classes.PlayerController,
+              (void*)g_resolver->classes.Transform,
+              (void*)g_resolver->classes.Camera);
+
     g_config.initialized = true;
     g_hooked = true;
-    NSLog(@"[StandoffCheat] Initialized — IL2CPP hooked, game ready");
+    CHEAT_LOG("m: HOOKED — cheat active");
 }
 
-#pragma mark - Update loop
+#pragma mark - Update loop (main thread, via overlay CADisplayLink)
 
-static void UpdateLoop() {
-    if (!g_hooked) return;
-    il2cpp_thread_attach(il2cpp_domain_get());
+void CheatUpdateMainThread() {
+    if (!g_hooked || !g_config.initialized) return;
+    @autoreleasepool {
+        static long tick = 0;
+        GetRecoilControl()->Update();
 
-    GetRecoilControl()->Update();
+        ESP* esp = (ESP*)GetESP();
+        esp->Update();
 
-    ESP* esp = (ESP*)GetESP();
-    esp->Update();
+        if (g_config.aimbotEnabled && !g_players.empty()) {
+            Aimbot* aim = GetAimbot();
+            aim->SetPlayerList(&g_players);
+            aim->Update();
+        }
 
-    if (g_config.aimbotEnabled && g_players.size() > 0) {
-        Aimbot* aim = GetAimbot();
-        aim->SetPlayerList(&g_players);
-        aim->Update();
+        if ((tick++ % 600) == 0) {
+            CHEAT_LOG("m: alive tick=%ld players=%zu", tick, g_players.size());
+        }
     }
 }
 
-static void HookRenderLoop() {
-    if (g_timer) return;
+#pragma mark - UI scheduling (main thread)
 
-    double interval = 1.0 / 60.0;
-    g_timer = dispatch_source_create(DISPATCH_SOURCE_TYPE_TIMER, 0, 0,
-                                     dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_HIGH, 0));
-    dispatch_source_set_timer(g_timer, dispatch_walltime(NULL, 0),
-                              (uint64_t)(interval * NSEC_PER_SEC),
-                              (uint64_t)(interval * NSEC_PER_SEC * 0.5));
-    dispatch_source_set_event_handler(g_timer, ^{
-        UpdateLoop();
-    });
-    dispatch_resume(g_timer);
-
-    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(1 * NSEC_PER_SEC)),
-                   dispatch_get_main_queue(), ^{
-        ShowMenu();
-        SetupOverlayWindow();
+static void ScheduleUI() {
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(1 * NSEC_PER_SEC)),
+                       dispatch_get_main_queue(), ^{
+            CHEAT_LOG("m: creating UI");
+            ShowMenu();
+            SetupOverlayWindow();
+            CHEAT_LOG("m: UI created");
+        });
     });
 }
 
+#pragma mark - Init thread (background, quick retry)
+
 static void* initThread(void* arg) {
     @autoreleasepool {
+        CHEAT_LOG("t: init thread start");
         int attempts = 0;
-        while (!g_hooked && attempts < 300) {
-            TryInitialize();
-            usleep(200 * 1000);
+        while (!g_bindingReady && attempts < 900) {
+            if (!g_fwHandle) g_fwHandle = LoadIL2CppFunctions();
+            if (g_fwHandle && BindIL2CppFunctions(g_fwHandle)) {
+                g_bindingReady = true;
+                CHEAT_LOG("t: bind success at attempt %d", attempts);
+                dispatch_async(dispatch_get_main_queue(), ^{
+                    FinishInitialize();
+                });
+                break;
+            }
+            usleep(100 * 1000);
             attempts++;
         }
-        if (g_hooked) {
-            NSLog(@"[StandoffCheat] Bootstrap complete after %d attempts", attempts);
-            HookRenderLoop();
-        } else {
-            NSLog(@"[StandoffCheat] Give up — IL2CPP never became available");
-        }
+        if (!g_bindingReady) CHEAT_LOG("t: gave up binding after %d attempts", attempts);
     }
     return NULL;
 }
@@ -194,10 +212,13 @@ __attribute__((constructor))
 static void StandoffCheatInit() {
     if (!IsRunningInStandoff()) return;
 
-    NSLog(@"[StandoffCheat] Starting — Standoff 2 cheat");
+    CHEAT_LOG_OPEN();
+    CHEAT_INSTALL_CRASH_HANDLERS();
+    CHEAT_LOG("init: starting — Standoff 2 cheat");
 
     pthread_t thread;
     pthread_create(&thread, NULL, initThread, NULL);
+    ScheduleUI();
 }
 
 @interface StandoffCheatLoader : NSObject
@@ -207,7 +228,7 @@ static void StandoffCheatInit() {
 
 + (void)load {
     if (!IsRunningInStandoff()) return;
-    NSLog(@"[StandoffCheat] Loader attached");
+    CHEAT_LOG("init: loader attached");
 }
 
 @end
