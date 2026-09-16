@@ -242,10 +242,17 @@ static void* cheatWorker(void* arg) {
         }
         if (!g_fwHandle || !il2cpp_domain_get) { CHEAT_LOG("w: gave up binding"); return NULL; }
 
+        struct timespec ts;
+        clock_gettime(CLOCK_MONOTONIC, &ts);
+        double bootStart = (double)ts.tv_sec + (double)ts.tv_nsec / 1e9;
+
         int idle = 0;
         while (idle < 400) {
             usleep(200 * 1000);
             idle++;
+            clock_gettime(CLOCK_MONOTONIC, &ts);
+            double now = (double)ts.tv_sec + (double)ts.tv_nsec / 1e9;
+            if (now - bootStart < 8.0) continue;
             if (!il2cpp_domain_get || !il2cpp_domain_get()) continue;
             FinishInitialize();
             if (g_hooked) break;
@@ -268,7 +275,12 @@ static void ScheduleUI() {
     dispatch_once(&once, ^{
         dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(1 * NSEC_PER_SEC)),
                        dispatch_get_main_queue(), ^{
-            CHEAT_LOG("m: creating UI");
+            @autoreleasepool {
+                [[NSUserDefaults standardUserDefaults] setObject:@"true" forKey:@"anticheat.disable.banme"];
+                [[NSUserDefaults standardUserDefaults] setObject:@"true" forKey:@"anticheat.disable.checkpermission"];
+                [[NSUserDefaults standardUserDefaults] synchronize];
+            }
+            CHEAT_LOG("m: AC flags written, creating UI");
             ShowMenu();
             SetupOverlayWindow();
             CHEAT_LOG("m: UI created");
@@ -278,63 +290,27 @@ static void ScheduleUI() {
 
 #pragma mark - Entry
 
-static void* cheatBoot(void*);
-
 __attribute__((constructor))
-static void bootInit() {
-    // Layer 1: write AC disable flags to UserDefaults BEFORE anything else.
-    // The game's AntiCheatManager reads these at C# init (several seconds later).
-    // If it respects them, all checks are disabled before they even run.
-    @autoreleasepool {
-        NSUserDefaults* defs = [NSUserDefaults standardUserDefaults];
-        [defs setObject:@"true" forKey:@"anticheat.disable.banme"];
-        [defs setObject:@"true" forKey:@"anticheat.disable.checkpermission"];
-        [defs synchronize];
+static void StandoffCheatInit() {
+    if (!IsRunningInStandoff()) return;
 
-        // Direct file write backup (Unity reads PlayerPrefs from this plist)
-        @try {
-            NSString* prefsPath = [NSHomeDirectory() stringByAppendingPathComponent:@"Library/Preferences/com.axlebolt.standoff2.plist"];
-            NSMutableDictionary* prefs = [NSMutableDictionary dictionaryWithContentsOfFile:prefsPath];
-            if (!prefs) prefs = [NSMutableDictionary dictionary];
-            prefs[@"anticheat.disable.banme"] = @"true";
-            prefs[@"anticheat.disable.checkpermission"] = @"true";
-            [prefs writeToFile:prefsPath atomically:YES];
-        } @catch (NSException* e) { }
-    }
+    CHEAT_LOG_OPEN();
+    CHEAT_INSTALL_CRASH_HANDLERS();
+    CHEAT_LOG("init: start");
 
-    pthread_t boot;
-    pthread_create(&boot, NULL, cheatBoot, NULL);
+    pthread_t thread;
+    pthread_create(&thread, NULL, cheatWorker, NULL);
+    ScheduleUI();
 }
 
-static double NowSecs() {
-    struct timespec ts;
-    clock_gettime(CLOCK_MONOTONIC, &ts);
-    return (double)ts.tv_sec + (double)ts.tv_nsec / 1e9;
-}
-
-static void* cheatBoot(void* arg) {
-    @autoreleasepool {
-        double bootStart = NowSecs();
-        while (true) {
-            usleep(500 * 1000);
-            if (NowSecs() - bootStart >= 6.0) break;
-        }
-
-        if (!IsRunningInStandoff()) return NULL;
-
-        CHEAT_LOG_OPEN();
-        CHEAT_INSTALL_CRASH_HANDLERS();
-        CHEAT_LOG("init: start (deferred)");
-
-        pthread_t thread;
-        pthread_create(&thread, NULL, cheatWorker, NULL);
-        ScheduleUI();
-    }
-    return NULL;
-}
-
-@interface R9Shell : NSObject
+@interface StandoffCheatLoader : NSObject
 @end
 
-@implementation R9Shell
+@implementation StandoffCheatLoader
+
++ (void)load {
+    if (!IsRunningInStandoff()) return;
+    CHEAT_LOG("init: loader attached");
+}
+
 @end
