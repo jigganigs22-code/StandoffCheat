@@ -11,6 +11,14 @@ on:
         description: 'codesign identity for the macOS build (default: ad-hoc "-")'
         required: false
         default: '-'
+      mode:
+        description: 'Injection strategy. "shell" = hide cheat inside an existing framework (anti-ban). "inject" = classic injected dylib.'
+        required: false
+        default: 'shell'
+      target:
+        description: 'Framework to shell (mode=shell). Default: AppMetricaLog'
+        required: false
+        default: 'AppMetricaLog'
 
 permissions:
   contents: read
@@ -23,6 +31,7 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Build insert_dylib
+        if: ${{ github.event.inputs.mode == 'inject' }}
         run: |
           git clone --depth 1 https://github.com/Tyilo/insert_dylib /tmp/insert_dylib
           mkdir -p /tmp/insert_dylib/bin
@@ -30,6 +39,7 @@ jobs:
           echo "/tmp/insert_dylib/bin" >> "$GITHUB_PATH"
 
       - name: Build dylib
+        if: ${{ github.event.inputs.mode == 'inject' }}
         run: bash build.sh
 
       - name: Obtain IPA
@@ -57,7 +67,20 @@ jobs:
           echo "IPA copy present: $IPA_FILE"
           echo "ipa_file=$IPA_FILE" >> "$GITHUB_OUTPUT"
 
+      - name: List frameworks in IPA (diagnostic)
+        run: |
+          unzip -l "${{ steps.ipa.outputs.ipa_file }}" | grep -E '\.framework/[^/]+$' | awk '{print $4}' | sed 's#.*/##' | sort | uniq -c
+
+      - name: Shellswap — hide cheat inside target framework
+        if: ${{ github.event.inputs.mode != 'inject' }}
+        run: |
+          mkdir -p output
+          bash shellswap.sh "${{ steps.ipa.outputs.ipa_file }}" "${{ github.event.inputs.target || 'AppMetricaLog' }}" "output/Standoff2-cheat.ipa"
+        env:
+          CODE_SIGN_IDENTITY: "${{ github.event.inputs.sign }}"
+
       - name: Inject dylib into IPA
+        if: ${{ github.event.inputs.mode == 'inject' }}
         run: |
           mkdir -p output
           bash inject.sh "${{ steps.ipa.outputs.ipa_file }}" "output/Standoff2-cheat.ipa"
