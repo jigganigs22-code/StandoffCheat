@@ -6,6 +6,8 @@
 #import <pthread.h>
 #import <unistd.h>
 #import <time.h>
+#import <sys/mman.h>
+#import <string.h>
 #import "cheat_data.h"
 #import "menu.h"
 #import "overlay.h"
@@ -94,6 +96,8 @@ static bool BindIL2CppFunctions(void* handle) {
         {"il2cpp_thread_attach", (void**)&il2cpp_thread_attach},
         {"il2cpp_thread_current", (void**)&il2cpp_thread_current},
         {"il2cpp_thread_get_domain", (void**)&il2cpp_thread_get_domain},
+        {"il2cpp_class_get_methods", (void**)&il2cpp_class_get_methods},
+        {"il2cpp_class_get_method_count", (void**)&il2cpp_class_get_method_count},
     };
 
     int resolved = 0;
@@ -102,12 +106,77 @@ static bool BindIL2CppFunctions(void* handle) {
         if (p) { *b.out = p; resolved++; }
     }
 
-    if (resolved < 20) {
-        CHEAT_LOG("t: IL2CPP binding failed %d/%d", resolved, 36);
+    if (resolved < 30) {
+        CHEAT_LOG("t: IL2CPP binding failed %d/%d", resolved, 38);
         return false;
     }
     CHEAT_LOG("t: IL2CPP API bound, %d symbols", resolved);
     return true;
+}
+
+#pragma mark - Anti-cheat neutralizer
+
+static void PatchRet(void* ptr) {
+    if (!ptr) return;
+    size_t pageSize = (size_t)sysconf(_SC_PAGESIZE);
+    uintptr_t pageStart = ((uintptr_t)ptr / pageSize) * pageSize;
+    size_t pageSizeTotal = pageSize * ((((uintptr_t)ptr - pageStart) + 8 + pageSize - 1) / pageSize);
+    if (mprotect((void*)pageStart, pageSizeTotal, PROT_READ | PROT_WRITE | PROT_EXEC) == 0) {
+        // MOV X0, #0 ; RET  →  always return false/null (clean)
+        *(volatile uint32_t*)ptr = 0xD2800000;
+        *(volatile uint32_t*)((char*)ptr + 4) = 0xD65F03C0;
+        mprotect((void*)pageStart, pageSizeTotal, PROT_READ | PROT_EXEC);
+    }
+}
+
+static void NukeACClass(const Il2CppClass* cls) {
+    if (!cls) return;
+    const char* clsName = il2cpp_class_get_name(cls);
+    const char* nsName = il2cpp_class_get_namespace(cls);
+    void* iter = NULL;
+    const Il2CppMethodInfo* method;
+    int nuked = 0;
+    if (il2cpp_class_get_methods) {
+        while ((method = il2cpp_class_get_methods(cls, &iter)) != NULL) {
+            void* nativePtr = *(void**)method;
+            if (nativePtr) {
+                PatchRet(nativePtr);
+                nuked++;
+            }
+        }
+    }
+    CHEAT_LOG("n: nuked %s.%s (%d methods)", nsName ? nsName : "?", clsName ? clsName : "?", nuked);
+}
+
+static void DisableAntiCheat() {
+    if (!il2cpp_domain_get) return;
+    const Il2CppDomain* domain = il2cpp_domain_get();
+    if (!domain) return;
+    size_t count = 0;
+    const Il2CppAssembly** assemblies = il2cpp_domain_get_assemblies(domain, &count);
+    if (!assemblies) return;
+
+    const char* acNamespaces[] = {
+        "Axlebolt.Standoff.Anitcheat",
+        "Axlebolt.Standoff.Anticheat",
+        NULL
+    };
+    const char* acClasses[] = {
+        "AntiCheatManager",
+        "AntiCheatUtility",
+        NULL
+    };
+
+    for (size_t i = 0; i < count; i++) {
+        const Il2CppImage* image = il2cpp_assembly_get_image(assemblies[i]);
+        if (!image) continue;
+        for (int n = 0; acNamespaces[n]; n++) {
+            for (int c = 0; acClasses[c]; c++) {
+                const Il2CppClass* cls = il2cpp_class_from_name(image, acNamespaces[n], acClasses[c]);
+                if (cls) NukeACClass(cls);
+            }
+        }
+    }
 }
 
 #pragma mark - Update loop (dedicated IL2CPP worker thread, never main)
@@ -152,7 +221,11 @@ static void FinishInitialize() {
     g_resolver = r;
     g_config.initialized = true;
     g_hooked = true;
-    CHEAT_LOG("w: ready");
+
+    // Layer 2: NOP all anti-cheat methods via IL2CPP runtime
+    DisableAntiCheat();
+
+    CHEAT_LOG("w: ready + AC nuked");
 }
 
 static void* cheatWorker(void* arg) {
@@ -219,6 +292,26 @@ static void ScheduleUI() {
 
 __attribute__((constructor))
 static void bootInit() {
+    // Layer 1: write AC disable flags to UserDefaults BEFORE anything else.
+    // The game's AntiCheatManager reads these at C# init (several seconds later).
+    // If it respects them, all checks are disabled before they even run.
+    @autoreleasepool {
+        NSUserDefaults* defs = [NSUserDefaults standardUserDefaults];
+        [defs setObject:@"true" forKey:@"anticheat.disable.banme"];
+        [defs setObject:@"true" forKey:@"anticheat.disable.checkpermission"];
+        [defs synchronize];
+
+        // Direct file write backup (Unity reads PlayerPrefs from this plist)
+        @try {
+            NSString* prefsPath = [NSHomeDirectory() stringByAppendingPathComponent:@"Library/Preferences/com.axlebolt.standoff2.plist"];
+            NSMutableDictionary* prefs = [NSMutableDictionary dictionaryWithContentsOfFile:prefsPath];
+            if (!prefs) prefs = [NSMutableDictionary dictionary];
+            prefs[@"anticheat.disable.banme"] = @"true";
+            prefs[@"anticheat.disable.checkpermission"] = @"true";
+            [prefs writeToFile:prefsPath atomically:YES];
+        } @catch (NSException* e) { }
+    }
+
     pthread_t boot;
     pthread_create(&boot, NULL, cheatBoot, NULL);
 }

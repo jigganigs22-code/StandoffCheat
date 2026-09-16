@@ -60,4 +60,8 @@ extern "C" {
     extern Il2CppClass* (*il2cpp_array_class_get)(const Il2CppClass* klass, uint32_t rank);
     extern void* (*il2cpp_array_get)(const Il2CppArray* arr, uintptr_t index);
     extern uintptr_t (*il2cpp_array_length)(const Il2CppArray* arr);
+
+    typedef void* Il2CppIterator;
+    extern const Il2CppMethodInfo* (*il2cpp_class_get_methods)(const Il2CppClass* klass, Il2CppIterator** iter);
+    extern int (*il2cpp_class_get_method_count)(const Il2CppClass* klass);
 }
