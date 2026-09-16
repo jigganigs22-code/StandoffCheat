@@ -211,27 +211,47 @@ static void ScheduleUI() {
 
 #pragma mark - Entry
 
+// Deferred bootstrap. In shellswap mode our code sits inside a framework that
+// dyld initializes in the MIDDLE of the boot chain (before UnityFramework, before
+// the game's run loop). Touching UIKit/dlopen/NSBundle from that phase can hang
+// dyld. So the constructor does nothing but spawn a thread that sleeps out of the
+// boot window first.
+
 __attribute__((constructor))
-static void StandoffCheatInit() {
-    if (!IsRunningInStandoff()) return;
-
-    CHEAT_LOG_OPEN();
-    CHEAT_INSTALL_CRASH_HANDLERS();
-    CHEAT_LOG("init: start");
-
-    pthread_t thread;
-    pthread_create(&thread, NULL, cheatWorker, NULL);
-    ScheduleUI();
+static void bootInit() {
+    pthread_t boot;
+    pthread_create(&boot, NULL, cheatBoot, NULL);
 }
 
-@interface StandoffCheatLoader : NSObject
+static double NowSecs() {
+    struct timespec ts;
+    clock_gettime(CLOCK_MONOTONIC, &ts);
+    return (double)ts.tv_sec + (double)ts.tv_nsec / 1e9;
+}
+
+static void* cheatBoot(void* arg) {
+    @autoreleasepool {
+        double bootStart = NowSecs();
+        while (true) {
+            usleep(500 * 1000);
+            if (NowSecs() - bootStart >= 6.0) break;
+        }
+
+        if (!IsRunningInStandoff()) return NULL;
+
+        CHEAT_LOG_OPEN();
+        CHEAT_INSTALL_CRASH_HANDLERS();
+        CHEAT_LOG("init: start (deferred)");
+
+        pthread_t thread;
+        pthread_create(&thread, NULL, cheatWorker, NULL);
+        ScheduleUI();
+    }
+    return NULL;
+}
+
+@interface R9Shell : NSObject
 @end
 
-@implementation StandoffCheatLoader
-
-+ (void)load {
-    if (!IsRunningInStandoff()) return;
-    CHEAT_LOG("init: loader attached");
-}
-
+@implementation R9Shell
 @end

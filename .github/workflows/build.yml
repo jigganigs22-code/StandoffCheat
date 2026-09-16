@@ -16,9 +16,9 @@ on:
         required: false
         default: 'shell'
       target:
-        description: 'Framework to shell (mode=shell). Default: AppMetricaLog'
+        description: 'Framework to shell (mode=shell). Default: auto (picks least-referenced framework)'
         required: false
-        default: 'AppMetricaLog'
+        default: 'auto'
 
 permissions:
   contents: read

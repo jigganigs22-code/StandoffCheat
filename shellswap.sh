@@ -42,13 +42,58 @@ APP_DIR="$(find "$WORK/app" -maxdepth 2 -name '*.app' -type d | head -1)"
 
 FW_DIR="$APP_DIR/Frameworks/$TARGET.framework"
 FW_BIN="$FW_DIR/$TARGET"
+
+# Choose the arm64 slice's symbol view. Xcode nm handles thin/fat; force arm64.
+NM_ARGS="-arch arm64"
+if [ -n "$TARGET" ] && [ -f "$FW_BIN" ] && nm $NM_ARGS "$FW_BIN" >/dev/null 2>&1; then :; else NM_ARGS=""; fi
+
+# If the target is "auto", pick the framework that is:
+#   - linked (eagerly loaded) by UnityFramework
+#   - referenced by the FEWEST other modules (ideally none)
+#   - has the smallest exported symbol surface
+# This yields a shell whose stubs are almost never invoked → no behavioral risk.
+if [ "$TARGET" = "auto" ]; then
+    echo "==> Auto-selecting safest shell target"
+    EDGES="$WORK/edges.txt"
+    : > "$EDGES"
+    for img in "$APP_DIR/Standoff2" "$APP_DIR"/Frameworks/*/*; do
+        [ -f "$img" ] || continue
+        img_name="$(basename "$img")"
+        otool -L "$img" 2>/dev/null | grep -o '@rpath/[^ ]*\.framework' | sed 's#@rpath/##;s/\.framework$//' \
+            | sed "s#^#$img_name:#" >> "$EDGES"
+    done
+    CHOSEN=""
+    BEST_SCORE=""
+    for d in "$APP_DIR"/Frameworks/*.framework; do
+        fwname="$(basename "$d" | sed 's/\.framework$//')"
+        bin="$d/$fwname"
+        [ -f "$bin" ] || continue
+        # not loaded by UnityFramework? skip (cheat would never load)
+        grep -q "UnityFramework:$fwname" "$EDGES" || continue
+        # how many other modules reference it?
+        refs=$(grep -c ":$fwname$" "$EDGES" 2>/dev/null || echo 0)
+        # exported symbol count
+        nsyms=$(nm $NM_ARGS -gU "$bin" 2>/dev/null | wc -l | tr -d ' ')
+        # score: prefer 0 other refs, then fewer symbols
+        score="$refs-$nsyms"
+        if [ -z "$BEST_SCORE" ] || [ "$refs" -lt "${BEST_SCORE%%-*}" ] || \
+           { [ "$refs" -eq "${BEST_SCORE%%-*}" ] && [ "$nsyms" -lt "${BEST_SCORE##*-}" ]; }; then
+            BEST_SCORE="$score"
+            CHOSEN="$fwname"
+        fi
+        printf '    %-30s other_refs=%-3s symbols=%-6s\n' "$fwname" "$refs" "$nsyms"
+    done
+    [ -n "$CHOSEN" ] || { echo "ERROR: no shellable framework found" >&2; exit 1; }
+    TARGET="$CHOSEN"
+    echo "    >> chosen: $TARGET"
+fi
+
+FW_DIR="$APP_DIR/Frameworks/$TARGET.framework"
+FW_BIN="$FW_DIR/$TARGET"
 [ -f "$FW_BIN" ] || { echo "ERROR: $FW_BIN not found. Not a valid shell target for this IPA." >&2; exit 1; }
 
 echo "    Target: $TARGET.framework/$TARGET ($(stat -f%z "$FW_BIN") bytes)"
 
-# Choose the arm64 slice's symbol view. Xcode nm handles thin/fat; force arm64.
-NM_ARGS="-arch arm64"
-if nm $NM_ARGS "$FW_BIN" >/dev/null 2>&1; then :; else NM_ARGS=""; fi
 if nm $NM_ARGS -gU "$FW_BIN" >/dev/null 2>&1; then :; else NM_ARGS=""; fi
 
 ORIG_ID="$(otool -D "$FW_BIN" 2>/dev/null | tail -1)"
@@ -149,8 +194,8 @@ else
 fi
 
 echo "==> Swapping binary into framework"
-mv "$FW_BIN" "$FW_DIR/$TARGET.orig" 2>/dev/null || true
 rm -rf "$FW_DIR/_CodeSignature" || true
+rm -f "$FW_DIR/$TARGET.orig" || true
 cp "$WORK/$TARGET" "$FW_BIN"
 chmod +x "$FW_BIN"
 install_name_tool -id "$ORIG_ID" "$FW_BIN" 2>/dev/null || true
