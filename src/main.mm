@@ -7,6 +7,7 @@
 #import <unistd.h>
 #import <time.h>
 #import <string.h>
+#import <sys/mman.h>
 #import "cheat_data.h"
 #import "menu.h"
 #import "overlay.h"
@@ -66,6 +67,8 @@ static bool BindIL2CppFunctions(void* handle) {
         {"il2cpp_class_from_name", (void**)&il2cpp_class_from_name},
         {"il2cpp_class_get_field_from_name", (void**)&il2cpp_class_get_field_from_name},
         {"il2cpp_class_get_method_from_name", (void**)&il2cpp_class_get_method_from_name},
+        {"il2cpp_class_get_methods", (void**)&il2cpp_class_get_methods},
+        {"il2cpp_class_get_method_count", (void**)&il2cpp_class_get_method_count},
         {"il2cpp_class_get_name", (void**)&il2cpp_class_get_name},
         {"il2cpp_class_get_namespace", (void**)&il2cpp_class_get_namespace},
         {"il2cpp_field_get_offset", (void**)&il2cpp_field_get_offset},
@@ -104,11 +107,132 @@ static bool BindIL2CppFunctions(void* handle) {
     }
 
     if (resolved < 30) {
-        CHEAT_LOG("t: IL2CPP binding failed %d/%d", resolved, 36);
+        CHEAT_LOG("t: IL2CPP binding failed %d/%d", resolved, 38);
         return false;
     }
     CHEAT_LOG("t: IL2CPP API bound, %d symbols", resolved);
     return true;
+}
+
+#pragma mark - Surgical anti-cheat neutralization
+
+static void PatchReturnZero(void* addr) {
+    if (!addr) return;
+    uintptr_t page = (uintptr_t)addr & ~(uintptr_t)0x3FFF;
+    size_t len = 0x4000;
+    if (mprotect((void*)page, len, PROT_READ | PROT_WRITE) != 0) {
+        CHEAT_LOG("ac: mprotect RW fail %p", addr);
+        return;
+    }
+    const uint32_t insn[2] = { 0xD2800000, 0xD65F03C0 }; // MOV X0,#0; RET
+    memcpy(addr, insn, 8);
+    __builtin___clear_cache((char*)addr, (char*)addr + 8);
+    mprotect((void*)page, len, PROT_READ | PROT_EXEC);
+    CHEAT_LOG("ac: patched %p", addr);
+}
+
+static void* g_patchedAddrs[512];
+static int g_patchedCount = 0;
+
+static bool AlreadyPatched(void* addr) {
+    for (int i = 0; i < g_patchedCount; i++)
+        if (g_patchedAddrs[i] == addr) return true;
+    return false;
+}
+
+static const char* g_skipPrefixes[] = {
+    ".ctor", ".cctor", ".dtor", "Equals", "GetHashCode", "ToString",
+    "GetType", "op_", "Finalize", "get_", "set_", nullptr
+};
+
+static void NukeACClass(const Il2CppClass* klass, const char* name) {
+    if (!klass) { CHEAT_LOG("ac: class %s not found", name); return; }
+    if (!il2cpp_class_get_methods || !il2cpp_method_get_name) return;
+    int count = il2cpp_class_get_method_count ? il2cpp_class_get_method_count(klass) : -1;
+    int patched = 0;
+    int seen = 0;
+    Il2CppIterator iter = 0;
+    const Il2CppMethodInfo* m;
+    while ((m = il2cpp_class_get_methods(klass, (Il2CppIterator*)&iter)) != nullptr) {
+        if (!m) continue;
+        const char* mn = il2cpp_method_get_name(m);
+        if (!mn) continue;
+        seen++;
+        bool skip = false;
+        for (int i = 0; g_skipPrefixes[i]; i++)
+            if (strstr(mn, g_skipPrefixes[i])) { skip = true; break; }
+        if (skip) { CHEAT_LOG("ac:  skip %s::%s", name, mn); continue; }
+        bool detection = strstr(mn, "Check") || strstr(mn, "Detect") ||
+            strstr(mn, "Is") || strstr(mn, "Has") || strstr(mn, "Verify") ||
+            strstr(mn, "Verdict") || strstr(mn, "Report") || strstr(mn, "Collect") ||
+            strstr(mn, "Update") || strstr(mn, "Run") || strstr(mn, "Execute");
+        void* target = (void*)((const void**)m)[0];
+        if (detection && target && !AlreadyPatched(target)) {
+            PatchReturnZero(target);
+            if (g_patchedCount < 512) g_patchedAddrs[g_patchedCount++] = target;
+            patched++;
+            CHEAT_LOG("ac:  patch %s::%s", name, mn);
+        } else {
+            CHEAT_LOG("ac:  keep %s::%s", name, mn);
+        }
+    }
+    CHEAT_LOG("ac: nuked %s (%d methods, %d patched)", name, count, patched);
+}
+
+static int g_acNuked = 0;
+
+static void NukeAntiCheat() {
+    if (g_acNuked) return;
+    const char* ns = "Axlebolt.Standoff.Anitcheat";
+    const char* classes[] = {
+        "InjectionCheatDetector",
+        "CheatDetector",
+        "BulletLayerHashCheatDetector",
+        "BulletLayerRaycastCheatDetectorByTriangles",
+        "CapsuleColliderCheatDetector",
+        "ChamsByPassCheatDetector",
+        "CharacterControllerHash",
+        "DefaultLayerHashCheatDetector",
+        "FlyCameraCheatDetector",
+        "GunControllerCheatDetector",
+        "GunParametersCheatDetector",
+        "HitboxHash",
+        "IObjectHash",
+        "IPlayerHash",
+        "MapZonesHashCheatDetector",
+        "PlayerColliderCheatDetector",
+        "QuaternionCheatDetector",
+        "SphereColliderCheatDetector",
+        "StaticColliderHash",
+        "StaticZoneHash",
+        "WardenIos",
+        "WardenVerdictProviderFactory",
+        "IWardenVerdictProvider",
+        "WardenMock",
+        "WardenAndroid",
+        "KillTypeCheatController",
+        "KillStreakCheatController",
+        "ResultRoundCheatController",
+        "PlayerColliderCheatController",
+        nullptr
+    };
+    const Il2CppDomain* dom = il2cpp_domain_get();
+    if (!dom) { CHEAT_LOG("ac: no domain"); return; }
+    size_t n = 0;
+    const Il2CppAssembly** asmz = il2cpp_domain_get_assemblies(dom, &n);
+    if (!asmz || n == 0) { CHEAT_LOG("ac: no assemblies"); return; }
+    int found = 0;
+    for (int i = 0; classes[i]; i++) {
+        const Il2CppClass* k = nullptr;
+        for (size_t idx = 0; idx < n && !k; idx++) {
+            const Il2CppImage* img = il2cpp_assembly_get_image(asmz[idx]);
+            if (img) k = il2cpp_class_from_name(img, ns, classes[i]);
+        }
+        if (k) { found++; NukeACClass(k, classes[i]); }
+        else CHEAT_LOG("ac: class %s not found yet", classes[i]);
+    }
+    CHEAT_LOG("ac: sweep done found=%d", found);
+    if (found >= 10) g_acNuked = 1;
 }
 
 #pragma mark - Update loop (dedicated IL2CPP worker thread, never main)
@@ -154,6 +278,8 @@ static void FinishInitialize() {
     g_config.initialized = true;
     g_hooked = true;
 
+    NukeAntiCheat();
+
     CHEAT_LOG("w: ready");
 }
 
@@ -175,9 +301,15 @@ static void* cheatWorker(void* arg) {
         double bootStart = (double)ts.tv_sec + (double)ts.tv_nsec / 1e9;
 
         int idle = 0;
+        bool acAttempted = false;
         while (idle < 400) {
             usleep(200 * 1000);
             idle++;
+            if (!acAttempted && il2cpp_domain_get && il2cpp_domain_get()) {
+                acAttempted = true;
+                CHEAT_LOG("w: attempting early AC sweep");
+                NukeAntiCheat();
+            }
             clock_gettime(CLOCK_MONOTONIC, &ts);
             double now = (double)ts.tv_sec + (double)ts.tv_nsec / 1e9;
             if (now - bootStart < 8.0) continue;
