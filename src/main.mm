@@ -137,6 +137,7 @@ static void NukeACClass(const Il2CppClass* cls) {
     const Il2CppMethodInfo* method;
     int nuked = 0;
     if (il2cpp_class_get_methods) {
+        Il2CppIterator iter = NULL;
         while ((method = il2cpp_class_get_methods(cls, &iter)) != NULL) {
             void* nativePtr = *(void**)method;
             if (nativePtr) {
@@ -241,17 +242,10 @@ static void* cheatWorker(void* arg) {
         }
         if (!g_fwHandle || !il2cpp_domain_get) { CHEAT_LOG("w: gave up binding"); return NULL; }
 
-        struct timespec ts;
-        clock_gettime(CLOCK_MONOTONIC, &ts);
-        double bootStart = (double)ts.tv_sec + (double)ts.tv_nsec / 1e9;
-
         int idle = 0;
         while (idle < 400) {
             usleep(200 * 1000);
             idle++;
-            clock_gettime(CLOCK_MONOTONIC, &ts);
-            double now = (double)ts.tv_sec + (double)ts.tv_nsec / 1e9;
-            if (now - bootStart < 8.0) continue;
             if (!il2cpp_domain_get || !il2cpp_domain_get()) continue;
             FinishInitialize();
             if (g_hooked) break;
@@ -284,11 +278,7 @@ static void ScheduleUI() {
 
 #pragma mark - Entry
 
-// Deferred bootstrap. In shellswap mode our code sits inside a framework that
-// dyld initializes in the MIDDLE of the boot chain (before UnityFramework, before
-// the game's run loop). Touching UIKit/dlopen/NSBundle from that phase can hang
-// dyld. So the constructor does nothing but spawn a thread that sleeps out of the
-// boot window first.
+static void* cheatBoot(void*);
 
 __attribute__((constructor))
 static void bootInit() {
